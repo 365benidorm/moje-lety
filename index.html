@@ -467,6 +467,24 @@ function fmtDateHuman(iso){
   return `${MONTHS_EN[mi]} ${parseInt(d,10)}, ${y}`;
 }
 function todayISO(){ return new Date().toISOString().slice(0,10); }
+/* Always store `date` as a plain LOCAL calendar date (YYYY-MM-DD), never a
+   UTC datetime — otherwise the day can shift by one depending on the
+   device's timezone (e.g. a spreadsheet exporting "2026-08-29" as a UTC
+   timestamp can arrive here as "...-08-28T22:00:00.000Z"). Departure/
+   arrival times are untouched — those stay local-airport-time strings. */
+function normalizeDateInput(raw){
+  if(!raw) return '';
+  raw = String(raw).trim();
+  if(/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw; // already a clean date
+  const d = new Date(raw);
+  if(!isNaN(d.getTime())){
+    const y = d.getFullYear();
+    const m = String(d.getMonth()+1).padStart(2,'0');
+    const day = String(d.getDate()).padStart(2,'0');
+    return `${y}-${m}-${day}`;
+  }
+  return raw; // unparseable — leave as-is rather than lose data
+}
 function escapeHtml(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function showToast(msg){
   const t = document.getElementById('toast');
@@ -571,6 +589,7 @@ async function loadFlights(){
 async function saveFlight(flight){
   if(!flight.id) flight.id = uuid();
   if(!flight.createdAt) flight.createdAt = Date.now();
+  if(flight.date) flight.date = normalizeDateInput(flight.date);
   flight.updatedAt = Date.now();
   await dbPut('flights', flight);
   await loadFlights();
@@ -806,6 +825,7 @@ function wireLockScreen(){
         document.getElementById('lockScreen').style.display = 'none';
         await loadAirports();
         await loadFlights();
+        if(await migrateFlightDates()){ await loadFlights(); scheduleAutoSync(); }
         renderAll();
         autoSyncPull();
       } else {
@@ -1909,6 +1929,24 @@ document.getElementById('fileImportPhoto').addEventListener('change', async (e)=
 });
 
 /* ----------------------------------- Init ------------------------------------ */
+async function migrateFlightDates(){
+  // One-off cleanup for flights saved before dates were normalized (e.g. a
+  // CSV import that contained full UTC timestamps instead of plain dates).
+  const all = await dbGetAll('flights');
+  let changed = false;
+  for(const f of all){
+    if(f.date && f.date.includes('T')){
+      const fixed = normalizeDateInput(f.date);
+      if(fixed !== f.date){
+        f.date = fixed;
+        f.updatedAt = Date.now();
+        await dbPut('flights', f);
+        changed = true;
+      }
+    }
+  }
+  return changed;
+}
 async function init(){
   if('serviceWorker' in navigator){
     try{ await navigator.serviceWorker.register('sw.js'); }catch(e){ /* sandboxed preview or file:// – app still works */ }
@@ -1920,6 +1958,7 @@ async function init(){
     document.getElementById('app').style.display = '';
     await loadAirports();
     await loadFlights();
+    if(await migrateFlightDates()){ await loadFlights(); scheduleAutoSync(); }
     renderAll();
     autoSyncPull();
   } else {
