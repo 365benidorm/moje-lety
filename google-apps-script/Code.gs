@@ -12,6 +12,7 @@
 
 const SHEET_FLIGHTS = 'Flights';
 const SHEET_SESSIONS = 'Sessions';
+const SHEET_DELETIONS = 'Deletions';
 const COLUMNS = ['id','date','airline','flightNumber','origin','destination','depTime','arrTime','seat','aircraft','pnr','notes','source','createdAt','updatedAt'];
 const CODE_TTL_MINUTES = 10;
 const SESSION_TTL_DAYS = 30;
@@ -37,6 +38,37 @@ function getSessionsSheet_() {
     sheet.hideSheet();
   }
   return sheet;
+}
+
+function getDeletionsSheet_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(SHEET_DELETIONS);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_DELETIONS);
+    sheet.appendRow(['id', 'deletedAt']);
+    sheet.setFrozenRows(1);
+    sheet.hideSheet();
+  }
+  return sheet;
+}
+
+function deleteFlightRow_(flightId) {
+  const sheet = getFlightsSheet_();
+  const values = sheet.getDataRange().getValues();
+  const headers = values[0];
+  const idCol = headers.indexOf('id');
+  for (let r = values.length - 1; r >= 1; r--) {
+    if (values[r][idCol] === flightId) { sheet.deleteRow(r + 1); break; }
+  }
+}
+
+function recordDeletion_(flightId) {
+  const sheet = getDeletionsSheet_();
+  const data = sheet.getDataRange().getValues();
+  for (let r = 1; r < data.length; r++) {
+    if (data[r][0] === flightId) return; // already recorded
+  }
+  sheet.appendRow([flightId, Date.now()]);
 }
 
 function jsonOut_(obj) {
@@ -108,7 +140,10 @@ function doGet(e) {
         headers.forEach((h, i) => { obj[h] = row[i]; });
         return obj;
       });
-    return jsonOut_({ flights: flights });
+    const delSheet = getDeletionsSheet_();
+    const delData = delSheet.getDataRange().getValues();
+    const deletedIds = delData.slice(1).map(r => r[0]).filter(Boolean);
+    return jsonOut_({ flights: flights, deletedIds: deletedIds });
   }
 
   return jsonOut_({ error: 'unknown_action' });
@@ -173,6 +208,14 @@ function doPost(e) {
 
   // action === 'sync' (default) — save/update flights, requires a valid token
   if (!isValidSession_(body.key)) return jsonOut_({ error: 'unauthorized' });
+
+  // Process deletions first, so a flight can't be re-created by an upsert
+  // that was queued before the delete on the sending device.
+  (body.deletedIds || []).forEach(id => {
+    deleteFlightRow_(id);
+    recordDeletion_(id);
+  });
+
   const sheet = getFlightsSheet_();
   const values = sheet.getDataRange().getValues();
   const headers = values[0];
@@ -180,7 +223,10 @@ function doPost(e) {
   const idToRow = {};
   for (let r = 1; r < values.length; r++) idToRow[values[r][idCol]] = r + 1;
 
-  const flights = body.flights || [];
+  const deletedSet = {};
+  (body.deletedIds || []).forEach(id => { deletedSet[id] = true; });
+
+  const flights = (body.flights || []).filter(f => !deletedSet[f.id]);
   flights.forEach(f => {
     const row = headers.map(h => (f[h] !== undefined && f[h] !== null) ? f[h] : '');
     if (idToRow[f.id]) {
