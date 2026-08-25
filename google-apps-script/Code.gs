@@ -1,13 +1,13 @@
 /**
- * MOJE LETY — backend: přihlášení na heslo + e-mailový kód (2FA)
- * a automatická obousměrná záloha letů do tohoto Google Sheetu.
+ * FLIGHT LOG — backend: password + email 2FA sign-in, and automatic
+ * two-way backup of flights to this Google Sheet.
  *
- * NASTAVENÍ (Rozšíření > Apps Script > Nastavení projektu > Vlastnosti skriptu):
- *   AUTH_EMAIL     = info@krejcijakub.cz   (kam se posílá přihlašovací kód)
- *   AUTH_PASSWORD  = tvoje zvolené heslo (obyčejný text — je vidět jen tobě
- *                     na serveru, appka ho nikdy neuvidí ani neuloží)
+ * SETUP (Extensions > Apps Script > Project Settings > Script Properties):
+ *   AUTH_EMAIL     = info@krejcijakub.cz   (where the sign-in code is sent)
+ *   AUTH_PASSWORD  = your chosen password (plain text — only visible to you
+ *                     on the server; the app never sees or stores it)
  *
- * Data zůstávají celá v tomto tvém Google Sheetu. Nikdo jiný k tomu nemá přístup.
+ * All data stays in this Google Sheet of yours. Nobody else has access to it.
  */
 
 const SHEET_FLIGHTS = 'Flights';
@@ -44,7 +44,7 @@ function jsonOut_(obj) {
 }
 
 function randomCode_() {
-  return String(Math.floor(100000 + Math.random() * 900000)); // 6místný kód
+  return String(Math.floor(100000 + Math.random() * 900000)); // 6-digit code
 }
 
 function randomToken_() {
@@ -72,22 +72,22 @@ function cleanExpiredSessions_() {
 }
 
 /**
- * JEDNORÁZOVÁ POMOCNÁ FUNKCE — spusť ji ručně (tlačítko ▶ Spustit nahoře,
- * v nabídce vyber "autorizovatOpravneni") POKAŽDÉ po nasazení nové verze.
- * Donutí Google zeptat se na nové oprávnění (odesílání e-mailu) tak, aby
- * appka pak nedostávala místo odpovědi přihlašovací/souhlasnou stránku
- * (to je nejčastější příčina CORS chyby v appce).
- * Pošle sám sobě testovací e-mail — když ho dostaneš, je hotovo.
+ * ONE-OFF HELPER — run manually (▶ Run button above, pick
+ * "autorizovatOpravneni") EVERY TIME after deploying a new version.
+ * Forces Google to ask for the new permission (sending email) so the
+ * app doesn't get a sign-in/consent page back instead of a real answer
+ * (that's the most common cause of a CORS error in the app).
+ * Sends yourself a test email — once you get it, you're done.
  */
 function autorizovatOpravneni() {
   const props = PropertiesService.getScriptProperties();
   const authEmail = props.getProperty('AUTH_EMAIL') || Session.getEffectiveUser().getEmail();
-  MailApp.sendEmail(authEmail, 'Moje Lety – autorizace OK', 'Pokud vidíš tenhle e-mail, oprávnění pro appku je v pořádku a přihlašování by teď mělo fungovat.');
+  MailApp.sendEmail(authEmail, 'Flight Log – authorization OK', 'If you can see this email, the app\'s permissions are all set and sign-in should work now.');
 }
 
 /* ---------------------------------- GET ----------------------------------- */
-// ?action=check&key=TOKEN            -> je token platný?
-// ?action=flights&key=TOKEN          -> vrátí všechny lety
+// ?action=check&key=TOKEN            -> is the token valid?
+// ?action=flights&key=TOKEN          -> returns all flights
 function doGet(e) {
   const action = (e.parameter && e.parameter.action) || 'flights';
   const token = (e.parameter && e.parameter.key) || '';
@@ -115,10 +115,10 @@ function doGet(e) {
 }
 
 /* ---------------------------------- POST ---------------------------------- */
-// {action:'login_request', email, password}  -> pošle 6místný kód na AUTH_EMAIL
-// {action:'login_verify', code}               -> vrátí session token (platný 30 dní)
-// {action:'logout', token}                     -> zruší jedno zařízení
-// {action:'sync', key, flights}                -> uloží/aktualizuje lety (výchozí akce)
+// {action:'login_request', email, password}  -> sends a 6-digit code to AUTH_EMAIL
+// {action:'login_verify', code}               -> returns a session token (valid 30 days)
+// {action:'logout', token}                     -> signs out one device
+// {action:'sync', key, flights}                -> saves/updates flights (default action)
 function doPost(e) {
   let body;
   try {
@@ -133,7 +133,7 @@ function doPost(e) {
     const authEmail = props.getProperty('AUTH_EMAIL');
     const authPassword = props.getProperty('AUTH_PASSWORD');
     if (!authEmail || !authPassword || body.email !== authEmail || body.password !== authPassword) {
-      Utilities.sleep(800); // zpomalí hádání hesla hrubou silou
+      Utilities.sleep(800); // slows down brute-force password guessing
       return jsonOut_({ error: 'invalid_credentials' });
     }
     const code = randomCode_();
@@ -141,9 +141,9 @@ function doPost(e) {
     props.setProperty('PENDING_CODE_EXPIRES', String(Date.now() + CODE_TTL_MINUTES * 60000));
     MailApp.sendEmail(
       authEmail,
-      'Přihlašovací kód – Moje Lety',
-      'Tvůj kód pro přihlášení do appky Moje Lety: ' + code +
-      '\n\nPlatí ' + CODE_TTL_MINUTES + ' minut. Pokud jsi o něj nežádal(a), appku prostě zavři – nikdo se bez hesla dovnitř nedostane.'
+      'Sign-in code – Flight Log',
+      'Your sign-in code for Flight Log: ' + code +
+      '\n\nValid for ' + CODE_TTL_MINUTES + ' minutes. If you didn\'t request this, just close the app — nobody gets in without the password too.'
     );
     return jsonOut_({ ok: true });
   }
@@ -171,7 +171,7 @@ function doPost(e) {
     return jsonOut_({ ok: true });
   }
 
-  // action === 'sync' (výchozí) — uložení / aktualizace letů, vyžaduje platný token
+  // action === 'sync' (default) — save/update flights, requires a valid token
   if (!isValidSession_(body.key)) return jsonOut_({ error: 'unauthorized' });
   const sheet = getFlightsSheet_();
   const values = sheet.getDataRange().getValues();
