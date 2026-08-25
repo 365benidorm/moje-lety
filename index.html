@@ -1982,6 +1982,18 @@ async function init(){
   }
 }
 init();
+
+/* Pull fresh data whenever the app is brought back to the foreground —
+   not just on a full reload — so switching back from another app or tab
+   picks up changes made elsewhere without needing to tap "Sync now". */
+let lastAutoPullAt = 0;
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState !== 'visible' || !state.authed) return;
+  const now = Date.now();
+  if(now - lastAutoPullAt < 5000) return; // avoid rapid repeat calls
+  lastAutoPullAt = now;
+  autoSyncPull();
+});
 </script>
 </body>
 </html>
