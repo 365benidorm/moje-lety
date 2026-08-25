@@ -1,14 +1,19 @@
-# Moje Lety — osobní letecký deník (PWA)
+# Flight Log — personal flight diary (PWA)
 
-Vlastní, nezávislá appka pro evidenci letů. Žádný účet u třetí strany,
-žádná závislost na Claude ani na jiné appce. Appka je zamčená heslem a
-e-mailovým kódem na info@krejcijakub.cz — data žijí v tvém prohlížeči
-(IndexedDB) a automaticky se zálohují do tvého vlastního Google Sheetu.
+Your own, independent flight-logging app. No third-party account needed,
+no dependency on Claude or another app. The app is locked with a password
+and an email code sent to info@krejcijakub.cz — data lives in your browser
+(IndexedDB) and is automatically backed up to your own Google Sheet.
 
-Díky tomuhle zámku už nevadí, že je hosting (GitHub Pages) technicky
-veřejný — bez hesla a bez přístupu k tomu e-mailu appku nikdo neotevře, natož
-aby v ní něco uviděl. Řešit soukromý/placený GitHub repozitář tedy není
-potřeba.
+**New in this version:** country flags next to airports, collapsible years,
+a Google-Photos-style year scrubber, photos per flight (kept local-only —
+not backed up to Sheets, to keep it fast), a world map of your routes with
+a year filter in Stats, separate Upcoming/Past tabs, and the whole interface
+is now in English.
+
+Because the app is locked behind a password + emailed code, it no longer
+matters that the hosting (GitHub Pages) is technically public — nobody gets
+in without both, so there's no need for a private/paid GitHub repo.
 
 ## Co je v balíčku
 
