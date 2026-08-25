@@ -71,6 +71,20 @@ function cleanExpiredSessions_() {
   }
 }
 
+/**
+ * JEDNORÁZOVÁ POMOCNÁ FUNKCE — spusť ji ručně (tlačítko ▶ Spustit nahoře,
+ * v nabídce vyber "autorizovatOpravneni") POKAŽDÉ po nasazení nové verze.
+ * Donutí Google zeptat se na nové oprávnění (odesílání e-mailu) tak, aby
+ * appka pak nedostávala místo odpovědi přihlašovací/souhlasnou stránku
+ * (to je nejčastější příčina CORS chyby v appce).
+ * Pošle sám sobě testovací e-mail — když ho dostaneš, je hotovo.
+ */
+function autorizovatOpravneni() {
+  const props = PropertiesService.getScriptProperties();
+  const authEmail = props.getProperty('AUTH_EMAIL') || Session.getEffectiveUser().getEmail();
+  MailApp.sendEmail(authEmail, 'Moje Lety – autorizace OK', 'Pokud vidíš tenhle e-mail, oprávnění pro appku je v pořádku a přihlašování by teď mělo fungovat.');
+}
+
 /* ---------------------------------- GET ----------------------------------- */
 // ?action=check&key=TOKEN            -> je token platný?
 // ?action=flights&key=TOKEN          -> vrátí všechny lety
