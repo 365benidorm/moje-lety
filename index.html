@@ -299,9 +299,34 @@
   .modal-sheet h3{ margin:0 0 12px; }
   .close-x{ float:right; color:var(--mist2); font-size:22px; cursor:pointer; line-height:1; }
   @media (min-width:560px){ #app{ border-left:1px solid var(--line); border-right:1px solid var(--line); } }
+
+  /* ---------- Lock screen (přihlášení + 2FA) ---------- */
+  #lockScreen{
+    position:fixed; inset:0; z-index:200;
+    background:radial-gradient(120% 100% at 50% 0%, var(--navy-2), var(--navy) 70%);
+    display:flex; align-items:center; justify-content:center;
+    padding:24px;
+  }
+  .lock-card{
+    width:100%; max-width:380px;
+    background:var(--paper); color:var(--ink);
+    border-radius:18px; padding:26px 22px;
+    box-shadow:0 10px 40px rgba(0,0,0,.45);
+  }
+  .lock-card .lock-icon{ width:40px; height:40px; color:var(--brass-dark); margin-bottom:10px; }
+  .lock-card h2{ margin:0 0 4px; font-size:20px; }
+  .lock-card p.lock-sub{ margin:0 0 18px; font-size:13px; color:#5b5644; line-height:1.5; }
+  .lock-card label{ color:#5b5644; }
+  .lock-card input{ background:#fff; border:1px solid rgba(30,34,51,.2); color:var(--ink); }
+  .lock-error{ color:var(--stamp); font-size:13px; margin-top:10px; font-weight:600; }
+  .lock-code-input{ letter-spacing:6px; font-family:var(--font-mono); font-size:22px; text-align:center; }
+  .lock-server-toggle{ font-size:12px; color:#8a836a; text-decoration:underline; cursor:pointer; margin-top:16px; display:inline-block; }
+  .lock-server-box{ margin-top:10px; }
+  .lock-resend{ font-size:12.5px; color:var(--teal); text-decoration:underline; cursor:pointer; margin-top:10px; display:inline-block; }
 </style>
 </head>
 <body>
+<div id="lockScreen" style="display:none"></div>
 <div id="app">
   <header class="topbar">
     <div class="brand">
@@ -480,7 +505,12 @@ const state = {
   csvRows: null,
   csvMapping: null,
   scanControls: null,
+  authed: false,
+  lockStage: 'password', // 'password' | 'code'
+  lockError: '',
+  lockBusy: false,
 };
+const AUTH_EMAIL = 'info@krejcijakub.cz';
 
 async function loadFlights(){
   const all = await dbGetAll('flights');
@@ -490,12 +520,15 @@ async function loadFlights(){
 async function saveFlight(flight){
   if(!flight.id) flight.id = uuid();
   if(!flight.createdAt) flight.createdAt = Date.now();
+  flight.updatedAt = Date.now();
   await dbPut('flights', flight);
   await loadFlights();
+  scheduleAutoSync();
 }
 async function deleteFlight(id){
   await dbDelete('flights', id);
   await loadFlights();
+  scheduleAutoSync();
 }
 async function getSettings(){
   const row = await dbGet('settings','config');
@@ -504,6 +537,203 @@ async function getSettings(){
 async function setSettings(patch){
   const cur = await getSettings();
   await dbPut('settings', {key:'config', value:{...cur, ...patch}});
+}
+
+/* ------------------------------ Přihlášení (2FA) --------------------------- */
+async function serverUrl(){
+  const cfg = await getSettings();
+  return cfg.sheetsUrl || '';
+}
+async function callServer(payload, method){
+  const url = await serverUrl();
+  if(!url) return {error:'no_server'};
+  try{
+    if(method === 'GET'){
+      const full = url + (url.includes('?')?'&':'?') + payload;
+      const res = await fetch(full);
+      return await res.json();
+    }
+    const res = await fetch(url, {
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify(payload),
+    });
+    return await res.json();
+  }catch(err){
+    console.error(err);
+    return {error:'network'};
+  }
+}
+async function checkSession(){
+  const cfg = await getSettings();
+  if(!cfg.sheetsUrl || !cfg.sessionToken) return false;
+  const data = await callServer('action=check&key='+encodeURIComponent(cfg.sessionToken), 'GET');
+  return !!data.ok;
+}
+async function requestLoginCode(password){
+  const data = await callServer({action:'login_request', email: AUTH_EMAIL, password});
+  return data;
+}
+async function verifyLoginCode(code){
+  const data = await callServer({action:'login_verify', code});
+  if(data.ok && data.token){
+    await setSettings({sessionToken: data.token});
+  }
+  return data;
+}
+async function doLogout(){
+  const cfg = await getSettings();
+  if(cfg.sessionToken) await callServer({action:'logout', token: cfg.sessionToken});
+  await setSettings({sessionToken: ''});
+  state.authed = false;
+  state.lockStage = 'password';
+  renderLockScreen();
+}
+
+/* Tichá automatická synchronizace: stáhne při startu, odešle po každé změně */
+let autoSyncTimer = null;
+function scheduleAutoSync(){
+  clearTimeout(autoSyncTimer);
+  autoSyncTimer = setTimeout(autoSyncPush, 900); // krátké zpoždění, ať se sloučí rychlé změny za sebou
+}
+async function autoSyncPush(){
+  const cfg = await getSettings();
+  if(!cfg.sheetsUrl || !cfg.sessionToken) return;
+  const dot = document.getElementById('syncDot');
+  if(dot) dot.className = 'sync-dot busy';
+  const flights = await dbGetAll('flights');
+  const data = await callServer({action:'sync', key: cfg.sessionToken, flights});
+  if(dot) dot.className = data.ok ? 'sync-dot ok' : 'sync-dot';
+  const lbl = document.getElementById('syncLabel');
+  if(lbl && data.ok) lbl.textContent = 'zálohováno';
+}
+async function autoSyncPull(){
+  const cfg = await getSettings();
+  if(!cfg.sheetsUrl || !cfg.sessionToken) return;
+  const dot = document.getElementById('syncDot');
+  if(dot) dot.className = 'sync-dot busy';
+  const data = await callServer('action=flights&key='+encodeURIComponent(cfg.sessionToken), 'GET');
+  if(data.error){ if(dot) dot.className='sync-dot'; return; }
+  let changed = false;
+  for(const remote of (data.flights||[])){
+    if(!remote.id) continue;
+    const local = state.flights.find(f=>f.id===remote.id);
+    const remoteUpdated = Number(remote.updatedAt)||0;
+    const localUpdated = local ? (Number(local.updatedAt)||0) : -1;
+    if(!local || remoteUpdated > localUpdated){
+      await dbPut('flights', remote);
+      changed = true;
+    }
+  }
+  if(changed) await loadFlights();
+  if(dot) dot.className = 'sync-dot ok';
+  const lbl = document.getElementById('syncLabel');
+  if(lbl) lbl.textContent = 'sesynchronizováno';
+  if(changed && state.activeTab !== 'add') renderAll();
+}
+
+/* ---------------------------------- Zámek --------------------------------- */
+const LOCK_ICON = '<svg viewBox="0 0 24 24" fill="none" class="lock-icon"><rect x="5" y="11" width="14" height="9" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M8 11V8a4 4 0 018 0v3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
+function renderLockScreen(){
+  const el = document.getElementById('lockScreen');
+  if(state.authed){ el.style.display='none'; return; }
+  document.getElementById('app').style.display = 'none';
+  el.style.display = 'flex';
+
+  if(state.lockStage === 'password'){
+    el.innerHTML = `
+    <div class="lock-card">
+      ${LOCK_ICON}
+      <h2>Moje Lety je zamčeno</h2>
+      <p class="lock-sub">Zadej heslo. Pak ti pošleme jednorázový kód na ${escapeHtml(AUTH_EMAIL)} — bez obojího se dovnitř nedostaneš.</p>
+      <form id="lockPasswordForm">
+        <label>Heslo</label>
+        <input type="password" id="lockPassword" autocomplete="current-password" required autofocus>
+        <button type="submit" class="btn btn-primary btn-block" style="margin-top:16px;" ${state.lockBusy?'disabled':''}>${state.lockBusy?'Odesílám kód…':'Pokračovat'}</button>
+      </form>
+      ${state.lockError?`<div class="lock-error">${escapeHtml(state.lockError)}</div>`:''}
+      <span class="lock-server-toggle" id="lockServerToggle">nastavit adresu serveru</span>
+      <div class="lock-server-box" id="lockServerBox" style="display:none;">
+        <label>URL nasazené Apps Script aplikace</label>
+        <input type="text" id="lockServerUrl" placeholder="https://script.google.com/macros/s/.../exec">
+        <button type="button" class="btn btn-ghost btn-sm btn-block" id="lockServerSave" style="margin-top:8px;">Uložit adresu</button>
+      </div>
+    </div>`;
+  } else {
+    el.innerHTML = `
+    <div class="lock-card">
+      ${LOCK_ICON}
+      <h2>Zadej kód z e-mailu</h2>
+      <p class="lock-sub">Poslali jsme šestimístný kód na ${escapeHtml(AUTH_EMAIL)}. Platí 10 minut.</p>
+      <form id="lockCodeForm">
+        <label>Kód</label>
+        <input type="text" id="lockCode" class="lock-code-input" inputmode="numeric" maxlength="6" autocomplete="one-time-code" required autofocus>
+        <button type="submit" class="btn btn-primary btn-block" style="margin-top:16px;" ${state.lockBusy?'disabled':''}>${state.lockBusy?'Ověřuji…':'Přihlásit se'}</button>
+      </form>
+      ${state.lockError?`<div class="lock-error">${escapeHtml(state.lockError)}</div>`:''}
+      <span class="lock-resend" id="lockResend">poslat kód znovu</span>
+    </div>`;
+  }
+  wireLockScreen();
+}
+function wireLockScreen(){
+  const pwForm = document.getElementById('lockPasswordForm');
+  if(pwForm){
+    pwForm.addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      const pw = document.getElementById('lockPassword').value;
+      state.lockBusy = true; state.lockError=''; renderLockScreen();
+      const url = await serverUrl();
+      if(!url){
+        state.lockBusy=false; state.lockError='Nejdřív nastav adresu serveru níže.'; renderLockScreen(); return;
+      }
+      const res = await requestLoginCode(pw);
+      state.lockBusy = false;
+      if(res.ok){ state.lockStage='code'; state.lockError=''; }
+      else state.lockError = 'Nesprávné přihlašovací údaje.';
+      renderLockScreen();
+    });
+  }
+  const codeForm = document.getElementById('lockCodeForm');
+  if(codeForm){
+    codeForm.addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      const code = document.getElementById('lockCode').value.trim();
+      state.lockBusy = true; state.lockError=''; renderLockScreen();
+      const res = await verifyLoginCode(code);
+      state.lockBusy = false;
+      if(res.ok){
+        state.authed = true;
+        document.getElementById('app').style.display = '';
+        document.getElementById('lockScreen').style.display = 'none';
+        await loadAirports();
+        await loadFlights();
+        renderAll();
+        autoSyncPull();
+      } else {
+        state.lockError = 'Neplatný nebo vypršelý kód.';
+        renderLockScreen();
+      }
+    });
+    const resend = document.getElementById('lockResend');
+    if(resend) resend.addEventListener('click', ()=>{ state.lockStage='password'; state.lockError=''; renderLockScreen(); });
+  }
+  const toggle = document.getElementById('lockServerToggle');
+  if(toggle){
+    toggle.addEventListener('click', async ()=>{
+      const box = document.getElementById('lockServerBox');
+      box.style.display = box.style.display==='none' ? 'block' : 'none';
+      document.getElementById('lockServerUrl').value = await serverUrl();
+    });
+  }
+  const saveServerBtn = document.getElementById('lockServerSave');
+  if(saveServerBtn){
+    saveServerBtn.addEventListener('click', async ()=>{
+      const val = document.getElementById('lockServerUrl').value.trim();
+      await setSettings({sheetsUrl: val});
+      showToast('Adresa uložena.');
+    });
+  }
 }
 
 /* --------------------------------- Icons --------------------------------- */
@@ -873,16 +1103,19 @@ function drawYearChart(){
 function renderSettingsView(){
   return `
   <div class="settings-block">
-    <h3>Google Sheets záloha</h3>
-    <p>Volitelné. Vytvoří zálohu tvých letů do vlastního Google Sheetu přes Apps Script — běží to v tvém Google Workspace, ne u třetí strany. Návod je v přiloženém README.</p>
-    <label>URL nasazené Apps Script aplikace</label>
-    <input type="text" id="sheetsUrl" placeholder="https://script.google.com/macros/s/.../exec">
-    <label>API klíč</label>
-    <input type="text" id="sheetsKey" placeholder="tvůj tajný klíč ze Script Properties">
-    <div style="display:flex;gap:8px;margin-top:14px;">
-      <button class="btn btn-teal" id="btnPush">Zálohovat do Sheets</button>
-      <button class="btn btn-ghost" id="btnPull">Stáhnout ze Sheets</button>
+    <h3>Přihlášení a záloha</h3>
+    <p>Appka je zamčená heslem + kódem na ${escapeHtml(AUTH_EMAIL)}. Po přihlášení se lety automaticky
+    tiše zálohují do tvého Google Sheetu a při otevření appky na jiném zařízení se zase stáhnou zpět —
+    není potřeba nic ručně mačkat.</p>
+    <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">
+      <button class="btn btn-teal" id="btnSyncNow">Synchronizovat teď</button>
+      <button class="btn btn-ghost" id="btnLogout">Odhlásit toto zařízení</button>
     </div>
+  </div>
+  <div class="settings-block">
+    <h3>Adresa serveru</h3>
+    <p>URL tvé nasazené Apps Script aplikace (stejná appka řeší přihlášení i zálohu letů).</p>
+    <input type="text" id="sheetsUrl" placeholder="https://script.google.com/macros/s/.../exec">
   </div>
   <div class="settings-block">
     <h3>Místní záloha</h3>
@@ -1339,20 +1572,23 @@ async function confirmCsvImport(){
 
 /* ------------------------------ Settings actions ---------------------------- */
 function wireSettingsEvents(){
-  const btnPush = document.getElementById('btnPush');
-  const btnPull = document.getElementById('btnPull');
   const sheetsUrlInput = document.getElementById('sheetsUrl');
-  const sheetsKeyInput = document.getElementById('sheetsKey');
   if(sheetsUrlInput){
-    getSettings().then(cfg=>{
-      sheetsUrlInput.value = cfg.sheetsUrl || '';
-      sheetsKeyInput.value = cfg.apiKey || '';
-    });
+    getSettings().then(cfg=>{ sheetsUrlInput.value = cfg.sheetsUrl || ''; });
     sheetsUrlInput.addEventListener('change', ()=> setSettings({sheetsUrl: sheetsUrlInput.value.trim()}));
-    sheetsKeyInput.addEventListener('change', ()=> setSettings({apiKey: sheetsKeyInput.value.trim()}));
   }
-  if(btnPush) btnPush.addEventListener('click', pushToSheets);
-  if(btnPull) btnPull.addEventListener('click', pullFromSheets);
+  const btnSyncNow = document.getElementById('btnSyncNow');
+  if(btnSyncNow) btnSyncNow.addEventListener('click', async ()=>{
+    await autoSyncPush();
+    await autoSyncPull();
+    showToast('Synchronizováno ✓');
+  });
+  const btnLogout = document.getElementById('btnLogout');
+  if(btnLogout) btnLogout.addEventListener('click', async ()=>{
+    if(confirm('Odhlásit tohle zařízení? Data v appce tu zůstanou, ale příště se budeš muset znovu přihlásit.')){
+      await doLogout();
+    }
+  });
 
   const btnExportJson = document.getElementById('btnExportJson');
   if(btnExportJson) btnExportJson.addEventListener('click', async ()=>{
@@ -1392,55 +1628,6 @@ function wireSettingsEvents(){
     }
   });
 }
-async function pushToSheets(){
-  const cfg = await getSettings();
-  if(!cfg.sheetsUrl || !cfg.apiKey){ showToast('Nejprve vyplň URL a API klíč.'); return; }
-  document.getElementById('syncDot').className = 'sync-dot busy';
-  try{
-    const flights = await dbGetAll('flights');
-    const res = await fetch(cfg.sheetsUrl, {
-      method:'POST',
-      headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body: JSON.stringify({key: cfg.apiKey, flights}),
-    });
-    const data = await res.json();
-    if(data.error){ showToast('Chyba: '+data.error); document.getElementById('syncDot').className='sync-dot'; return; }
-    showToast(`Zálohováno (${data.count||flights.length} letů) ✓`);
-    document.getElementById('syncDot').className = 'sync-dot ok';
-    document.getElementById('syncLabel').textContent = 'zálohováno';
-  }catch(err){
-    console.error(err);
-    showToast('Zálohu se nepodařilo odeslat.');
-    document.getElementById('syncDot').className = 'sync-dot';
-  }
-}
-async function pullFromSheets(){
-  const cfg = await getSettings();
-  if(!cfg.sheetsUrl || !cfg.apiKey){ showToast('Nejprve vyplň URL a API klíč.'); return; }
-  document.getElementById('syncDot').className = 'sync-dot busy';
-  try{
-    const url = cfg.sheetsUrl + (cfg.sheetsUrl.includes('?')?'&':'?') + 'key=' + encodeURIComponent(cfg.apiKey);
-    const res = await fetch(url);
-    const data = await res.json();
-    if(data.error){ showToast('Chyba: '+data.error); document.getElementById('syncDot').className='sync-dot'; return; }
-    let count = 0;
-    for(const f of (data.flights||[])){
-      if(!f.id) continue;
-      await dbPut('flights', f);
-      count++;
-    }
-    await loadFlights();
-    showToast(`Staženo ${count} letů ✓`);
-    document.getElementById('syncDot').className = 'sync-dot ok';
-    document.getElementById('syncLabel').textContent = 'sesynchronizováno';
-    renderAll();
-  }catch(err){
-    console.error(err);
-    showToast('Stažení se nezdařilo.');
-    document.getElementById('syncDot').className = 'sync-dot';
-  }
-}
-
 /* --------------------------------- File inputs ------------------------------ */
 document.getElementById('fileImportPdf').addEventListener('change', (e)=>{
   const f = e.target.files[0]; if(f) handlePdfFile(f); e.target.value='';
@@ -1470,11 +1657,22 @@ document.getElementById('fileImportJson').addEventListener('change', (e)=>{
 
 /* ----------------------------------- Init ------------------------------------ */
 async function init(){
-  await loadAirports();
-  await loadFlights();
-  renderAll();
   if('serviceWorker' in navigator){
-    try{ await navigator.serviceWorker.register('sw.js'); }catch(e){ /* sandbox nebo file:// – v pořádku, appka funguje i tak */ }
+    try{ await navigator.serviceWorker.register('sw.js'); }catch(e){ /* sandbox nebo file:// – appka funguje i tak */ }
+  }
+  const cfg = await getSettings();
+  if(cfg.sessionToken && await checkSession()){
+    state.authed = true;
+    document.getElementById('lockScreen').style.display = 'none';
+    document.getElementById('app').style.display = '';
+    await loadAirports();
+    await loadFlights();
+    renderAll();
+    autoSyncPull();
+  } else {
+    state.authed = false;
+    renderLockScreen();
+    loadAirports(); // databázi letišť si appka může připravit na pozadí i před přihlášením
   }
 }
 init();
