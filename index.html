@@ -1,0 +1,1483 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#12182B">
+<meta name="description" content="Osobní letecký deník a cestovní sbírka. Ruční zadání, PDF a QR import, plná databáze letišť světa. Bez závislosti na třetí straně.">
+<title>Moje Lety – letecký deník</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<style>
+  :root{
+    --navy:#12182B;
+    --navy-2:#1B2340;
+    --navy-3:#232C4E;
+    --paper:#F3EDDD;
+    --paper-2:#e9e0c8;
+    --brass:#D3A94C;
+    --brass-dark:#B8923F;
+    --teal:#4A9B94;
+    --stamp:#C1543A;
+    --ink:#1E2233;
+    --mist2:#8892B0;
+    --line:rgba(255,255,255,.10);
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "IBM Plex Mono", Menlo, Consolas, monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;}
+  body{
+    background:var(--navy);
+    color:#EDEFF7;
+    font-family:var(--font-sans);
+    -webkit-font-smoothing:antialiased;
+    overscroll-behavior-y:none;
+  }
+  #app{
+    max-width:560px;
+    margin:0 auto;
+    min-height:100vh;
+    display:flex;
+    flex-direction:column;
+    position:relative;
+  }
+  /* ---------- Top bar ---------- */
+  .topbar{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:calc(env(safe-area-inset-top,0px) + 14px) 18px 14px;
+    background:linear-gradient(180deg, var(--navy-2), var(--navy));
+    border-bottom:1px solid var(--line);
+    position:sticky;
+    top:0;
+    z-index:20;
+  }
+  .brand{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    font-family:var(--font-sans);
+    font-weight:800;
+    font-size:19px;
+    letter-spacing:.2px;
+  }
+  .brand svg{ width:22px; height:22px; }
+  .sync-dot{
+    width:9px;height:9px;border-radius:50%;
+    background:var(--mist2);
+    box-shadow:0 0 0 3px rgba(255,255,255,.06);
+  }
+  .sync-dot.ok{ background:var(--teal); }
+  .sync-dot.busy{ background:var(--brass); animation:pulse 1s infinite; }
+  @keyframes pulse{ 0%,100%{opacity:1;} 50%{opacity:.35;} }
+  .topbar-right{ display:flex; align-items:center; gap:10px; font-size:12px; color:var(--mist2); }
+
+  /* ---------- Main ---------- */
+  main{ flex:1; padding:16px 16px 100px; }
+  h2.section-title{
+    font-size:13px;
+    text-transform:uppercase;
+    letter-spacing:1.2px;
+    color:var(--mist2);
+    margin:18px 2px 10px;
+    font-weight:700;
+  }
+  .empty{
+    text-align:center;
+    color:var(--mist2);
+    padding:40px 16px;
+    border:1px dashed var(--line);
+    border-radius:16px;
+    font-size:14px;
+    line-height:1.5;
+  }
+  .empty b{ color:#EDEFF7; }
+
+  /* ---------- Ticket / flight card ---------- */
+  .flight-year-group{ margin-bottom:6px; }
+  .flight-card{
+    position:relative;
+    background:var(--paper);
+    color:var(--ink);
+    border-radius:14px;
+    display:flex;
+    margin-bottom:12px;
+    box-shadow:0 3px 10px rgba(0,0,0,.28);
+    cursor:pointer;
+  }
+  .flight-card .fc-main{
+    flex:1;
+    padding:13px 14px;
+    min-width:0;
+  }
+  .fc-route{
+    display:flex; align-items:center; gap:8px;
+    font-family:var(--font-mono);
+    font-weight:700;
+    font-size:20px;
+    letter-spacing:.5px;
+  }
+  .fc-route svg{ width:16px; height:16px; flex:none; color:var(--brass-dark); }
+  .fc-sub{
+    margin-top:4px;
+    font-size:12.5px;
+    color:#5b5644;
+    display:flex; gap:10px; flex-wrap:wrap;
+  }
+  .fc-airline{ font-weight:600; }
+  .flight-card .fc-stub{
+    width:70px; flex:none;
+    display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+    gap:3px;
+    padding:6px 2px;
+    font-family:var(--font-mono);
+    font-size:10.5px;
+    text-align:center;
+    color:#514c3c;
+    border-left:2px dashed rgba(30,34,51,.3);
+  }
+  .fc-stub .fc-day{ font-size:17px; font-weight:800; color:var(--ink); }
+  .flight-card::before, .flight-card::after{
+    content:'';
+    position:absolute;
+    width:14px; height:14px;
+    background:var(--navy);
+    border-radius:50%;
+    right:68px;
+  }
+  .flight-card::before{ top:-7px; }
+  .flight-card::after{ bottom:-7px; }
+
+  .flight-detail{
+    background:var(--navy-3);
+    border-radius:14px;
+    padding:14px;
+    margin:-4px 0 14px;
+    font-size:13.5px;
+    color:var(--mist2);
+  }
+  .flight-detail .row{ display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid var(--line); }
+  .flight-detail .row:last-child{ border-bottom:none; }
+  .flight-detail .row span:last-child{ color:#EDEFF7; font-family:var(--font-mono); }
+  .detail-actions{ display:flex; gap:8px; margin-top:12px; }
+
+  /* ---------- Buttons / forms ---------- */
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:6px;
+    padding:11px 16px;
+    border-radius:11px;
+    border:none;
+    font-size:14.5px;
+    font-weight:700;
+    font-family:var(--font-sans);
+    cursor:pointer;
+    background:var(--navy-3);
+    color:#EDEFF7;
+    transition:transform .08s ease;
+  }
+  .btn:active{ transform:scale(.97); }
+  .btn-primary{ background:var(--brass); color:#1E1A0A; }
+  .btn-teal{ background:var(--teal); color:#08201E; }
+  .btn-ghost{ background:transparent; border:1px solid var(--line); }
+  .btn-danger{ background:transparent; color:var(--stamp); border:1px solid rgba(193,84,58,.5); }
+  .btn-block{ width:100%; }
+  .btn-sm{ padding:8px 12px; font-size:13px; border-radius:9px; }
+
+  label{ display:block; font-size:12.5px; color:var(--mist2); margin:14px 0 6px; font-weight:600; }
+  input[type=text], input[type=date], input[type=time], input[type=number], input[type=password], textarea, select{
+    width:100%;
+    padding:11px 12px;
+    border-radius:10px;
+    border:1px solid var(--line);
+    background:var(--navy-2);
+    color:#EDEFF7;
+    font-size:15px;
+    font-family:var(--font-sans);
+  }
+  input:focus, textarea:focus, select:focus{ outline:2px solid var(--brass); outline-offset:1px; }
+  .field-row{ display:flex; gap:10px; }
+  .field-row > div{ flex:1; }
+  .autocomplete-wrap{ position:relative; }
+  .autocomplete-list{
+    position:absolute; left:0; right:0; top:calc(100% + 4px);
+    background:var(--navy-2);
+    border:1px solid var(--line);
+    border-radius:10px;
+    max-height:220px; overflow:auto;
+    z-index:30;
+    box-shadow:0 8px 24px rgba(0,0,0,.4);
+  }
+  .autocomplete-item{ padding:10px 12px; font-size:13.5px; border-bottom:1px solid var(--line); cursor:pointer; }
+  .autocomplete-item:last-child{ border-bottom:none; }
+  .autocomplete-item b{ font-family:var(--font-mono); color:var(--brass); margin-right:6px; }
+  .autocomplete-item:hover, .autocomplete-item.active{ background:var(--navy-3); }
+
+  /* ---------- Subtabs (Add view) ---------- */
+  .subtabs{ display:flex; gap:6px; background:var(--navy-2); padding:4px; border-radius:12px; margin-bottom:16px; }
+  .subtab{ flex:1; text-align:center; padding:9px 4px; border-radius:9px; font-size:12.5px; font-weight:700; color:var(--mist2); cursor:pointer; }
+  .subtab.active{ background:var(--brass); color:#1E1A0A; }
+
+  .dropzone{
+    border:2px dashed var(--line);
+    border-radius:14px;
+    padding:28px 16px;
+    text-align:center;
+    color:var(--mist2);
+    font-size:13.5px;
+    cursor:pointer;
+    margin-bottom:14px;
+  }
+  .dropzone svg{ width:30px; height:30px; margin-bottom:8px; color:var(--brass); }
+  .dropzone b{ color:#EDEFF7; }
+
+  video#scanVideo{ width:100%; border-radius:14px; background:#000; }
+  .scan-hint{ font-size:12.5px; color:var(--mist2); text-align:center; margin-top:8px; }
+
+  .review-box{ background:var(--navy-2); border-radius:14px; padding:14px; margin-bottom:14px; border:1px solid var(--line); }
+  .review-box .warn{ font-size:12.5px; color:var(--brass); margin-bottom:8px; }
+  .raw-toggle{ font-size:12px; color:var(--mist2); text-decoration:underline; cursor:pointer; margin-top:8px; display:inline-block; }
+  .raw-text{ font-family:var(--font-mono); font-size:11px; color:var(--mist2); white-space:pre-wrap; word-break:break-all; margin-top:8px; max-height:160px; overflow:auto; }
+
+  table.csv-preview{ width:100%; border-collapse:collapse; font-size:12px; margin-bottom:12px; }
+  table.csv-preview th, table.csv-preview td{ border:1px solid var(--line); padding:5px 6px; text-align:left; }
+  table.csv-preview select{ padding:4px 6px; font-size:11.5px; }
+  .table-scroll{ overflow-x:auto; margin-bottom:12px; }
+
+  /* ---------- Stats ---------- */
+  .stat-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:18px; }
+  .stat-card{ background:var(--navy-2); border-radius:14px; padding:14px; }
+  .stat-card .num{ font-family:var(--font-mono); font-size:26px; font-weight:800; color:var(--brass); }
+  .stat-card .lbl{ font-size:12px; color:var(--mist2); margin-top:2px; }
+  canvas#yearChart{ width:100%; height:160px; background:var(--navy-2); border-radius:14px; }
+  .chip-list{ display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .chip{ background:var(--navy-2); border-radius:20px; padding:5px 11px; font-size:12px; font-family:var(--font-mono); }
+
+  /* ---------- Settings ---------- */
+  .settings-block{ background:var(--navy-2); border-radius:14px; padding:14px; margin-bottom:16px; }
+  .settings-block p{ font-size:13px; color:var(--mist2); line-height:1.5; margin:4px 0 0; }
+  .settings-block h3{ font-size:14.5px; margin:0 0 4px; }
+  .toast{
+    position:fixed; left:50%; bottom:110px; transform:translateX(-50%);
+    background:var(--brass); color:#1E1A0A; padding:10px 18px; border-radius:30px;
+    font-size:13.5px; font-weight:700; box-shadow:0 6px 20px rgba(0,0,0,.4);
+    z-index:100; opacity:0; pointer-events:none; transition:opacity .2s ease, transform .2s ease;
+  }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(-4px); }
+
+  /* ---------- Tab bar ---------- */
+  nav.tabbar{
+    position:fixed; left:0; right:0; bottom:0;
+    max-width:560px; margin:0 auto;
+    display:flex;
+    background:linear-gradient(0deg, var(--navy) 60%, rgba(18,24,43,.97));
+    border-top:1px solid var(--line);
+    padding:8px 6px calc(env(safe-area-inset-bottom,0px) + 8px);
+    z-index:20;
+  }
+  .tab-btn{
+    flex:1; display:flex; flex-direction:column; align-items:center; gap:3px;
+    color:var(--mist2); font-size:10.5px; font-weight:700; padding:6px 2px; border-radius:10px;
+    cursor:pointer;
+  }
+  .tab-btn svg{ width:21px; height:21px; }
+  .tab-btn.active{ color:var(--brass); }
+  .modal-backdrop{
+    position:fixed; inset:0; background:rgba(10,12,22,.75); z-index:50;
+    display:flex; align-items:flex-end; justify-content:center;
+  }
+  .modal-sheet{
+    background:var(--navy); width:100%; max-width:560px;
+    border-radius:18px 18px 0 0; padding:18px 18px calc(env(safe-area-inset-bottom,0px) + 18px);
+    max-height:88vh; overflow:auto;
+  }
+  .modal-sheet h3{ margin:0 0 12px; }
+  .close-x{ float:right; color:var(--mist2); font-size:22px; cursor:pointer; line-height:1; }
+  @media (min-width:560px){ #app{ border-left:1px solid var(--line); border-right:1px solid var(--line); } }
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M2 16l20-7-7 7 2 6-4-3-3 3-1-5-7-1z" fill="currentColor" style="color:var(--brass)"/></svg>
+      Moje Lety
+    </div>
+    <div class="topbar-right">
+      <span id="syncLabel">lokálně</span>
+      <span class="sync-dot" id="syncDot"></span>
+    </div>
+  </header>
+
+  <main id="view"></main>
+
+  <nav class="tabbar" id="tabbar"></nav>
+</div>
+
+<div id="modalRoot"></div>
+<div class="toast" id="toast"></div>
+
+<input type="file" id="fileImportPdf" accept="application/pdf" style="display:none">
+<input type="file" id="fileImportImage" accept="image/*" style="display:none">
+<input type="file" id="fileImportCsv" accept=".csv,text/csv,text/plain" style="display:none">
+<input type="file" id="fileImportJson" accept="application/json,.json" style="display:none">
+
+<script>
+/* =========================================================================
+   MOJE LETY — osobní letecký deník (PWA)
+   Vlastní, nezávislá implementace. Žádná data neopouští zařízení, pokud
+   sám nezapneš zálohu do vlastního Google Sheets (Nastavení).
+   ========================================================================= */
+
+/* ---------------------------- IndexedDB layer --------------------------- */
+const DB_NAME = 'flightlog-db';
+const DB_VERSION = 1;
+let _dbPromise = null;
+function openDB(){
+  if(_dbPromise) return _dbPromise;
+  _dbPromise = new Promise((resolve, reject)=>{
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = (e)=>{
+      const db = e.target.result;
+      if(!db.objectStoreNames.contains('flights')) db.createObjectStore('flights', {keyPath:'id'});
+      if(!db.objectStoreNames.contains('settings')) db.createObjectStore('settings', {keyPath:'key'});
+    };
+    req.onsuccess = ()=>resolve(req.result);
+    req.onerror = ()=>reject(req.error);
+  });
+  return _dbPromise;
+}
+function dbGetAll(store){
+  return openDB().then(db=>new Promise((resolve,reject)=>{
+    const tx = db.transaction(store,'readonly');
+    const r = tx.objectStore(store).getAll();
+    r.onsuccess=()=>resolve(r.result); r.onerror=()=>reject(r.error);
+  }));
+}
+function dbGet(store,key){
+  return openDB().then(db=>new Promise((resolve,reject)=>{
+    const tx = db.transaction(store,'readonly');
+    const r = tx.objectStore(store).get(key);
+    r.onsuccess=()=>resolve(r.result); r.onerror=()=>reject(r.error);
+  }));
+}
+function dbPut(store,value){
+  return openDB().then(db=>new Promise((resolve,reject)=>{
+    const tx = db.transaction(store,'readwrite');
+    tx.objectStore(store).put(value);
+    tx.oncomplete=()=>resolve(); tx.onerror=()=>reject(tx.error);
+  }));
+}
+function dbDelete(store,key){
+  return openDB().then(db=>new Promise((resolve,reject)=>{
+    const tx = db.transaction(store,'readwrite');
+    tx.objectStore(store).delete(key);
+    tx.oncomplete=()=>resolve(); tx.onerror=()=>reject(tx.error);
+  }));
+}
+
+/* ------------------------------- Utilities ------------------------------ */
+function uuid(){
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{
+    const r = Math.random()*16|0, v = c==='x'?r:(r&0x3|0x8);
+    return v.toString(16);
+  });
+}
+function haversineKm(lat1,lon1,lat2,lon2){
+  const R=6371, toRad=d=>d*Math.PI/180;
+  const dLat=toRad(lat2-lat1), dLon=toRad(lon2-lon1);
+  const a=Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+function julianToISODate(julianDay, year){
+  const d = new Date(Date.UTC(year,0,1));
+  d.setUTCDate(d.getUTCDate() + (julianDay-1));
+  return d.toISOString().slice(0,10);
+}
+const MONTHS_CS = ['led','úno','bře','dub','kvě','čvn','čvc','srp','zář','říj','lis','pro'];
+function fmtDateHuman(iso){
+  if(!iso) return '—';
+  const [y,m,d] = iso.split('-');
+  const mi = parseInt(m,10)-1;
+  if(mi<0||mi>11||!d) return iso;
+  return `${parseInt(d,10)}. ${MONTHS_CS[mi]} ${y}`;
+}
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+function escapeHtml(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(()=>t.classList.remove('show'), 2400);
+}
+
+/* CSV parsing (handles quoted fields, auto ',' or ';' delimiter) */
+function detectDelimiter(text){
+  const line = text.split(/\r?\n/)[0] || '';
+  const commas = (line.match(/,/g)||[]).length;
+  const semis = (line.match(/;/g)||[]).length;
+  return semis > commas ? ';' : ',';
+}
+function parseCSV(text, delim){
+  const rows = []; let row=[], field='', inQ=false;
+  for(let i=0;i<text.length;i++){
+    const c = text[i];
+    if(inQ){
+      if(c === '"'){ if(text[i+1] === '"'){ field+='"'; i++; } else inQ=false; }
+      else field += c;
+    } else {
+      if(c === '"') inQ = true;
+      else if(c === delim){ row.push(field); field=''; }
+      else if(c === '\n'){ row.push(field); rows.push(row); row=[]; field=''; }
+      else if(c === '\r'){ /* skip */ }
+      else field += c;
+    }
+  }
+  if(field.length || row.length){ row.push(field); rows.push(row); }
+  return rows.filter(r => r.some(f => (f||'').trim() !== ''));
+}
+
+/* ------------------------------ Airport DB ------------------------------ */
+let AIRPORTS = [];
+let AIRPORT_BY_IATA = new Map();
+async function loadAirports(){
+  try{
+    const res = await fetch('airports.json');
+    AIRPORTS = await res.json();
+    AIRPORT_BY_IATA = new Map(AIRPORTS.map(a=>[a.iata, a]));
+  }catch(e){
+    console.error('Nepodařilo se načíst databázi letišť', e);
+  }
+}
+function searchAirports(query, limit=8){
+  query = (query||'').trim().toUpperCase();
+  if(!query) return [];
+  const exact = AIRPORT_BY_IATA.get(query);
+  const out = [];
+  if(exact) out.push(exact);
+  for(const a of AIRPORTS){
+    if(out.length >= limit) break;
+    if(a.iata === query) continue;
+    if(a.iata.startsWith(query) || a.city.toUpperCase().startsWith(query) || a.name.toUpperCase().includes(query) || a.city.toUpperCase().includes(query)){
+      out.push(a);
+    }
+  }
+  return out.slice(0, limit);
+}
+
+/* -------------------------------- State ---------------------------------- */
+const state = {
+  activeTab: 'flights',
+  addSubtab: 'manual',
+  flights: [],
+  expandedId: null,
+  csvRows: null,
+  csvMapping: null,
+  scanControls: null,
+};
+
+async function loadFlights(){
+  const all = await dbGetAll('flights');
+  all.sort((a,b)=> (b.date||'').localeCompare(a.date||''));
+  state.flights = all;
+}
+async function saveFlight(flight){
+  if(!flight.id) flight.id = uuid();
+  if(!flight.createdAt) flight.createdAt = Date.now();
+  await dbPut('flights', flight);
+  await loadFlights();
+}
+async function deleteFlight(id){
+  await dbDelete('flights', id);
+  await loadFlights();
+}
+async function getSettings(){
+  const row = await dbGet('settings','config');
+  return (row && row.value) || {};
+}
+async function setSettings(patch){
+  const cur = await getSettings();
+  await dbPut('settings', {key:'config', value:{...cur, ...patch}});
+}
+
+/* --------------------------------- Icons --------------------------------- */
+const ICONS = {
+  flights: '<svg viewBox="0 0 24 24" fill="none"><path d="M2 16l20-7-7 7 2 6-4-3-3 3-1-5-7-1z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>',
+  add: '<svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+  stats: '<svg viewBox="0 0 24 24" fill="none"><path d="M4 20V10M12 20V4M20 20v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+  settings: '<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"/><path d="M19 12a7 7 0 00-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 00-2-1.2L14 2h-4l-.5 2.6a7 7 0 00-2 1.2l-2.4-1-2 3.4 2 1.6A7 7 0 005 12c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1a7 7 0 002 1.2L10 22h4l.5-2.6a7 7 0 002-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>',
+  plane: '<svg viewBox="0 0 24 24" fill="none"><path d="M3 13l7-2 5-8 2 1-3 7 6 1v2l-6 1 1 6-2 1-3-6-7 2z" fill="currentColor"/></svg>',
+  upload: '<svg viewBox="0 0 24 24" fill="none"><path d="M12 16V4M7 9l5-5 5 5M4 20h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  camera: '<svg viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 011-1z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="14" r="3.5" stroke="currentColor" stroke-width="1.6"/></svg>',
+};
+
+/* ---------------------------------- Tabs ---------------------------------- */
+function renderTabBar(){
+  const tabs = [
+    {id:'flights', label:'Lety', icon:ICONS.flights},
+    {id:'add', label:'Přidat', icon:ICONS.add},
+    {id:'stats', label:'Statistiky', icon:ICONS.stats},
+    {id:'settings', label:'Nastavení', icon:ICONS.settings},
+  ];
+  const el = document.getElementById('tabbar');
+  el.innerHTML = tabs.map(t=>`
+    <div class="tab-btn ${state.activeTab===t.id?'active':''}" data-tab="${t.id}">
+      ${t.icon}<span>${t.label}</span>
+    </div>`).join('');
+  el.querySelectorAll('.tab-btn').forEach(b=>{
+    b.addEventListener('click', ()=>{ state.activeTab = b.dataset.tab; state.expandedId=null; renderAll(); });
+  });
+}
+
+async function renderAll(){
+  renderTabBar();
+  const view = document.getElementById('view');
+  if(state.activeTab === 'flights') view.innerHTML = renderFlightsView();
+  else if(state.activeTab === 'add') view.innerHTML = renderAddView();
+  else if(state.activeTab === 'stats') view.innerHTML = renderStatsView();
+  else if(state.activeTab === 'settings') view.innerHTML = renderSettingsView();
+  wireViewEvents();
+  if(state.activeTab === 'stats') drawYearChart();
+}
+
+/* ------------------------------ Flights view ------------------------------ */
+function airportLabel(iata){
+  const a = AIRPORT_BY_IATA.get(iata);
+  return a ? `${iata} · ${a.city}` : (iata||'???');
+}
+function renderFlightsView(){
+  if(!state.flights.length){
+    return `<div class="empty">
+      ✈️<br><br><b>Zatím žádné lety.</b><br>Přidej první let ručně, naskenuj palubní lístek, nebo hromadně nahraj CSV se svými historickými lety.
+    </div>`;
+  }
+  const groups = {};
+  for(const f of state.flights){
+    const y = (f.date||'').slice(0,4) || 'Bez data';
+    (groups[y] = groups[y]||[]).push(f);
+  }
+  const years = Object.keys(groups).sort((a,b)=>b.localeCompare(a));
+  return years.map(y=>`
+    <h2 class="section-title">${y} · ${groups[y].length} ${groups[y].length===1?'let':(groups[y].length<5?'lety':'letů')}</h2>
+    ${groups[y].map(f=>flightCardHTML(f)).join('')}
+  `).join('');
+}
+function flightCardHTML(f){
+  const expanded = state.expandedId === f.id;
+  const day = f.date ? f.date.slice(8,10) : '--';
+  const mon = f.date ? MONTHS_CS[parseInt(f.date.slice(5,7),10)-1] : '';
+  let html = `
+  <div class="flight-card" data-id="${f.id}">
+    <div class="fc-main">
+      <div class="fc-route">
+        ${escapeHtml(f.origin||'???')} ${ICONS.plane} ${escapeHtml(f.destination||'???')}
+      </div>
+      <div class="fc-sub">
+        <span class="fc-airline">${escapeHtml(f.flightNumber||f.airline||'')}</span>
+        <span>${fmtDateHuman(f.date)}</span>
+        ${f.seat?`<span>sedadlo ${escapeHtml(f.seat)}</span>`:''}
+      </div>
+    </div>
+    <div class="fc-stub">
+      <div class="fc-day">${day}</div>
+      <div>${mon}</div>
+    </div>
+  </div>`;
+  if(expanded){
+    const o = AIRPORT_BY_IATA.get(f.origin), d = AIRPORT_BY_IATA.get(f.destination);
+    let distLine = '';
+    if(o && d){ distLine = `<div class="row"><span>Vzdálenost</span><span>${Math.round(haversineKm(o.lat,o.lon,d.lat,d.lon))} km</span></div>`; }
+    html += `
+    <div class="flight-detail">
+      <div class="row"><span>Odkud</span><span>${escapeHtml(airportLabel(f.origin))}</span></div>
+      <div class="row"><span>Kam</span><span>${escapeHtml(airportLabel(f.destination))}</span></div>
+      <div class="row"><span>Datum</span><span>${escapeHtml(f.date||'—')}</span></div>
+      <div class="row"><span>Aerolinka / let</span><span>${escapeHtml(f.flightNumber||'—')}</span></div>
+      ${f.depTime?`<div class="row"><span>Odlet</span><span>${escapeHtml(f.depTime)}</span></div>`:''}
+      ${f.arrTime?`<div class="row"><span>Přílet</span><span>${escapeHtml(f.arrTime)}</span></div>`:''}
+      ${f.seat?`<div class="row"><span>Sedadlo</span><span>${escapeHtml(f.seat)}</span></div>`:''}
+      ${f.aircraft?`<div class="row"><span>Letadlo</span><span>${escapeHtml(f.aircraft)}</span></div>`:''}
+      ${f.pnr?`<div class="row"><span>Rezervační kód</span><span>${escapeHtml(f.pnr)}</span></div>`:''}
+      ${distLine}
+      ${f.notes?`<div class="row"><span>Poznámka</span><span>${escapeHtml(f.notes)}</span></div>`:''}
+      <div class="row"><span>Zdroj</span><span>${escapeHtml(f.source||'ruční')}</span></div>
+      <div class="detail-actions">
+        <button class="btn btn-ghost btn-sm" data-edit="${f.id}">Upravit</button>
+        <button class="btn btn-danger btn-sm" data-del="${f.id}">Smazat</button>
+      </div>
+    </div>`;
+  }
+  return html;
+}
+
+/* -------------------------------- Add view -------------------------------- */
+function renderAddView(){
+  const sub = state.addSubtab;
+  let body = '';
+  if(sub === 'manual') body = manualFormHTML();
+  else if(sub === 'pdf') body = pdfImportHTML();
+  else if(sub === 'scan') body = scanImportHTML();
+  else if(sub === 'csv') body = csvImportHTML();
+  return `
+    <div class="subtabs">
+      <div class="subtab ${sub==='manual'?'active':''}" data-sub="manual">Ručně</div>
+      <div class="subtab ${sub==='pdf'?'active':''}" data-sub="pdf">PDF</div>
+      <div class="subtab ${sub==='scan'?'active':''}" data-sub="scan">Sken</div>
+      <div class="subtab ${sub==='csv'?'active':''}" data-sub="csv">CSV import</div>
+    </div>
+    ${body}
+  `;
+}
+
+function manualFormHTML(draft){
+  const f = draft || {date:todayISO(), origin:'', destination:'', flightNumber:'', depTime:'', arrTime:'', seat:'', aircraft:'', pnr:'', notes:''};
+  return `
+  <form id="manualForm">
+    <label>Datum</label>
+    <input type="date" name="date" value="${f.date||''}" required>
+    <div class="field-row">
+      <div class="autocomplete-wrap">
+        <label>Odkud (IATA)</label>
+        <input type="text" name="origin" id="originInput" value="${f.origin||''}" placeholder="např. PRG" maxlength="3" autocomplete="off" required>
+        <div class="autocomplete-list" id="originList" style="display:none"></div>
+      </div>
+      <div class="autocomplete-wrap">
+        <label>Kam (IATA)</label>
+        <input type="text" name="destination" id="destInput" value="${f.destination||''}" placeholder="např. BCN" maxlength="3" autocomplete="off" required>
+        <div class="autocomplete-list" id="destList" style="display:none"></div>
+      </div>
+    </div>
+    <label>Číslo letu (např. OK123)</label>
+    <input type="text" name="flightNumber" value="${escapeHtml(f.flightNumber||'')}" placeholder="OK123">
+    <div class="field-row">
+      <div><label>Odlet</label><input type="time" name="depTime" value="${f.depTime||''}"></div>
+      <div><label>Přílet</label><input type="time" name="arrTime" value="${f.arrTime||''}"></div>
+    </div>
+    <div class="field-row">
+      <div><label>Sedadlo</label><input type="text" name="seat" value="${escapeHtml(f.seat||'')}" placeholder="12A"></div>
+      <div><label>Rezervační kód</label><input type="text" name="pnr" value="${escapeHtml(f.pnr||'')}" placeholder="PNR"></div>
+    </div>
+    <label>Typ letadla</label>
+    <input type="text" name="aircraft" value="${escapeHtml(f.aircraft||'')}" placeholder="např. A320">
+    <label>Poznámka</label>
+    <textarea name="notes" rows="2">${escapeHtml(f.notes||'')}</textarea>
+    <button type="submit" class="btn btn-primary btn-block" style="margin-top:18px;">${f.id?'Uložit změny':'Uložit let'}</button>
+    ${f.id?`<input type="hidden" name="id" value="${f.id}">`:''}
+  </form>`;
+}
+
+function pdfImportHTML(){
+  return `
+  <div class="dropzone" id="pdfDropzone">
+    ${ICONS.upload}<br>
+    <b>Nahrát PDF</b><br>palubní lístek nebo itinerář (klepni pro výběr souboru)
+  </div>
+  <p style="font-size:12.5px;color:var(--mist2);line-height:1.5;">
+    Z PDF se pokusím vytáhnout datum, letiště a číslo letu automaticky. Formáty aerolinek se ale hodně liší,
+    proto vždy uvidíš návrh k <b>kontrole a doplnění</b> před uložením — nic se neuloží automaticky naslepo.
+  </p>
+  <div id="pdfResult"></div>
+  `;
+}
+function scanImportHTML(){
+  return `
+  <div class="dropzone" id="scanDropzoneCamera">
+    ${ICONS.camera}<br><b>Skenovat kamerou</b><br>QR kód nebo čárový kód (PDF417) z palubního lístku
+  </div>
+  <div class="dropzone" id="scanDropzoneImage">
+    ${ICONS.upload}<br><b>Nahrát fotku kódu</b><br>pokud kamera nejde použít
+  </div>
+  <p style="font-size:12.5px;color:var(--mist2);line-height:1.5;">
+    Palubní lístky používají standard IATA BCBP. Ten <b>neobsahuje rok</b> letu (jen den v roce) —
+    proto tě po naskenování požádám o potvrzení roku.
+  </p>
+  <div id="scanArea"></div>
+  <div id="scanResult"></div>
+  `;
+}
+function csvImportHTML(){
+  if(state.csvRows){
+    return csvPreviewHTML();
+  }
+  return `
+  <div class="dropzone" id="csvDropzone">
+    ${ICONS.upload}<br><b>Nahrát CSV</b><br>hromadný import historických letů (např. export z Google Sheets)
+  </div>
+  <p style="font-size:12.5px;color:var(--mist2);line-height:1.5;">
+    Tohle je nejspolehlivější způsob, jak dostat dovnitř starší lety najednou. Připrav si tabulku
+    (sloupce klidně v libovolném pořadí a jazyce) se sloupci jako: datum, aerolinka/číslo letu,
+    odkud, kam, sedadlo, PNR, poznámka — po nahrání si sloupce spárujeme a než se cokoliv uloží,
+    uvidíš náhled.
+  </p>
+  <button class="btn btn-ghost btn-block" id="csvSampleBtn">Stáhnout ukázkovou CSV šablonu</button>
+  `;
+}
+
+const CSV_FIELD_OPTIONS = [
+  {v:'', l:'— ignorovat —'},
+  {v:'date', l:'Datum'},
+  {v:'airline', l:'Aerolinka'},
+  {v:'flightNumber', l:'Číslo letu'},
+  {v:'origin', l:'Odkud (IATA)'},
+  {v:'destination', l:'Kam (IATA)'},
+  {v:'depTime', l:'Čas odletu'},
+  {v:'arrTime', l:'Čas příletu'},
+  {v:'seat', l:'Sedadlo'},
+  {v:'pnr', l:'Rezervační kód'},
+  {v:'aircraft', l:'Letadlo'},
+  {v:'notes', l:'Poznámka'},
+];
+const HEADER_ALIASES = {
+  date:['date','datum','den'],
+  airline:['airline','aerolinka','dopravce','carrier'],
+  flightNumber:['flight','flightnumber','flight_number','let','cislo letu','číslo letu','cislo_letu'],
+  origin:['from','origin','odkud','z','departure','odlet'],
+  destination:['to','destination','kam','do','arrival','prilet','přílet'],
+  depTime:['deptime','dep_time','cas odletu','čas odletu'],
+  arrTime:['arrtime','arr_time','cas priletu','čas příletu'],
+  seat:['seat','sedadlo'],
+  pnr:['pnr','rezervace','booking','kod','kód'],
+  aircraft:['aircraft','letadlo','typ letadla','plane'],
+  notes:['notes','poznamka','poznámka','note'],
+};
+function guessMapping(headers){
+  return headers.map(h=>{
+    const norm = h.trim().toLowerCase();
+    for(const [field, aliases] of Object.entries(HEADER_ALIASES)){
+      if(aliases.includes(norm)) return field;
+    }
+    return '';
+  });
+}
+function csvPreviewHTML(){
+  const {headers, rows} = state.csvRows;
+  const mapping = state.csvMapping;
+  return `
+  <div class="review-box">
+    <div class="warn">Zkontroluj spárování sloupců, pak potvrď import (${rows.length} řádků).</div>
+    <div class="table-scroll">
+    <table class="csv-preview">
+      <thead><tr>${headers.map((h,i)=>`<th>
+        ${escapeHtml(h)}<br>
+        <select data-col="${i}" class="csvMapSelect">
+          ${CSV_FIELD_OPTIONS.map(o=>`<option value="${o.v}" ${mapping[i]===o.v?'selected':''}>${o.l}</option>`).join('')}
+        </select>
+      </th>`).join('')}</tr></thead>
+      <tbody>
+        ${rows.slice(0,6).map(r=>`<tr>${r.map(c=>`<td>${escapeHtml(c)}</td>`).join('')}</tr>`).join('')}
+      </tbody>
+    </table>
+    </div>
+    ${rows.length>6?`<p style="font-size:12px;color:var(--mist2);">…a dalších ${rows.length-6} řádků.</p>`:''}
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-primary" id="csvConfirmBtn">Importovat ${rows.length} letů</button>
+      <button class="btn btn-ghost" id="csvCancelBtn">Zrušit</button>
+    </div>
+  </div>`;
+}
+
+/* -------------------------------- Stats view ------------------------------- */
+function computeStats(){
+  const fl = state.flights;
+  const airportsSet = new Set();
+  const countrySet = new Set();
+  const airlineCounts = {};
+  const yearCounts = {};
+  let totalKm = 0, validDistLegs = 0;
+  for(const f of fl){
+    if(f.origin) airportsSet.add(f.origin);
+    if(f.destination) airportsSet.add(f.destination);
+    const o = AIRPORT_BY_IATA.get(f.origin), d = AIRPORT_BY_IATA.get(f.destination);
+    if(o) countrySet.add(o.country);
+    if(d) countrySet.add(d.country);
+    if(o && d){ totalKm += haversineKm(o.lat,o.lon,d.lat,d.lon); validDistLegs++; }
+    const carrier = (f.flightNumber||'').replace(/[0-9\s]/g,'').slice(0,2) || (f.airline||'').slice(0,2);
+    if(carrier) airlineCounts[carrier] = (airlineCounts[carrier]||0)+1;
+    const y = (f.date||'').slice(0,4);
+    if(y) yearCounts[y] = (yearCounts[y]||0)+1;
+  }
+  const totalHours = totalKm / 800 + validDistLegs*0.5; // odhad: 800 km/h průměr + 30 min na let navíc
+  const topAirlines = Object.entries(airlineCounts).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  return {
+    total: fl.length,
+    airports: airportsSet.size,
+    countries: countrySet.size,
+    totalKm: Math.round(totalKm),
+    totalHours: Math.round(totalHours*10)/10,
+    yearCounts, topAirlines,
+  };
+}
+function renderStatsView(){
+  if(!state.flights.length){
+    return `<div class="empty">Statistiky se objeví, jakmile přidáš první let.</div>`;
+  }
+  const s = computeStats();
+  return `
+  <div class="stat-grid">
+    <div class="stat-card"><div class="num">${s.total}</div><div class="lbl">letů celkem</div></div>
+    <div class="stat-card"><div class="num">${s.airports}</div><div class="lbl">letišť navštíveno</div></div>
+    <div class="stat-card"><div class="num">${s.countries}</div><div class="lbl">zemí</div></div>
+    <div class="stat-card"><div class="num">${s.totalKm.toLocaleString('cs-CZ')}</div><div class="lbl">km nalétáno</div></div>
+  </div>
+  <h2 class="section-title">Odhad strávený ve vzduchu</h2>
+  <div class="stat-card" style="margin-bottom:18px;"><div class="num">${s.totalHours} h</div><div class="lbl">hrubý odhad (běžná cestovní rychlost)</div></div>
+  <h2 class="section-title">Lety podle roku</h2>
+  <canvas id="yearChart"></canvas>
+  <h2 class="section-title">Nejčastější aerolinky</h2>
+  <div class="chip-list">
+    ${s.topAirlines.map(([c,n])=>`<div class="chip">${escapeHtml(c)} · ${n}×</div>`).join('') || '<span style="color:var(--mist2);font-size:13px;">nezjištěno</span>'}
+  </div>
+  `;
+}
+function drawYearChart(){
+  const canvas = document.getElementById('yearChart');
+  if(!canvas) return;
+  const s = computeStats();
+  const years = Object.keys(s.yearCounts).sort();
+  if(!years.length) return;
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr; canvas.height = 160 * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr,dpr);
+  const w = rect.width, h = 160;
+  ctx.clearRect(0,0,w,h);
+  const max = Math.max(...years.map(y=>s.yearCounts[y]));
+  const barW = Math.min(40, (w-20) / years.length - 10);
+  const gap = (w - barW*years.length) / (years.length+1);
+  ctx.font = '11px -apple-system, sans-serif';
+  years.forEach((y,i)=>{
+    const val = s.yearCounts[y];
+    const bh = (val/max) * (h-40);
+    const x = gap + i*(barW+gap);
+    const yTop = h - 24 - bh;
+    ctx.fillStyle = '#D3A94C';
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(x, yTop, barW, bh, 4) : ctx.rect(x, yTop, barW, bh);
+    ctx.fill();
+    ctx.fillStyle = '#EDEFF7';
+    ctx.textAlign = 'center';
+    ctx.fillText(val, x+barW/2, yTop-6);
+    ctx.fillStyle = '#8892B0';
+    ctx.fillText(y, x+barW/2, h-8);
+  });
+}
+
+/* ------------------------------- Settings view ----------------------------- */
+function renderSettingsView(){
+  return `
+  <div class="settings-block">
+    <h3>Google Sheets záloha</h3>
+    <p>Volitelné. Vytvoří zálohu tvých letů do vlastního Google Sheetu přes Apps Script — běží to v tvém Google Workspace, ne u třetí strany. Návod je v přiloženém README.</p>
+    <label>URL nasazené Apps Script aplikace</label>
+    <input type="text" id="sheetsUrl" placeholder="https://script.google.com/macros/s/.../exec">
+    <label>API klíč</label>
+    <input type="text" id="sheetsKey" placeholder="tvůj tajný klíč ze Script Properties">
+    <div style="display:flex;gap:8px;margin-top:14px;">
+      <button class="btn btn-teal" id="btnPush">Zálohovat do Sheets</button>
+      <button class="btn btn-ghost" id="btnPull">Stáhnout ze Sheets</button>
+    </div>
+  </div>
+  <div class="settings-block">
+    <h3>Místní záloha</h3>
+    <p>Nezávisle na čemkoliv jiném — soubor zůstává jen u tebe.</p>
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+      <button class="btn btn-ghost" id="btnExportJson">Stáhnout zálohu (JSON)</button>
+      <button class="btn btn-ghost" id="btnImportJson">Obnovit ze zálohy</button>
+      <button class="btn btn-ghost" id="btnExportCsvAll">Export do CSV</button>
+    </div>
+  </div>
+  <div class="settings-block">
+    <h3>O aplikaci</h3>
+    <p>Moje Lety běží celá v tvém prohlížeči. Data se ukládají lokálně (IndexedDB) a nikam se sama od
+    sebe neposílají — ani ke mně, ani nikomu jinému. Funguje offline po prvním načtení. Import PDF a
+    skenování kódů využívá dvě veřejné open-source knihovny (pdf.js, ZXing), stažené jednorázově
+    z CDN — nejde o službu, na které bys byl závislý.</p>
+  </div>
+  <div class="settings-block">
+    <h3>Nebezpečná zóna</h3>
+    <button class="btn btn-danger btn-block" id="btnClearAll">Smazat všechna data v tomto zařízení</button>
+  </div>
+  `;
+}
+
+/* ------------------------------ Event wiring ------------------------------- */
+let originDebounce, destDebounce;
+function wireAutocomplete(inputId, listId, onPick){
+  const input = document.getElementById(inputId);
+  const list = document.getElementById(listId);
+  if(!input) return;
+  input.addEventListener('input', ()=>{
+    const q = input.value;
+    const results = searchAirports(q, 8);
+    if(!results.length){ list.style.display='none'; return; }
+    list.innerHTML = results.map(a=>`<div class="autocomplete-item" data-iata="${a.iata}"><b>${a.iata}</b>${escapeHtml(a.city)} — ${escapeHtml(a.name)}</div>`).join('');
+    list.style.display = 'block';
+    list.querySelectorAll('.autocomplete-item').forEach(it=>{
+      it.addEventListener('click', ()=>{
+        input.value = it.dataset.iata;
+        list.style.display = 'none';
+        if(onPick) onPick(it.dataset.iata);
+      });
+    });
+  });
+  input.addEventListener('blur', ()=> setTimeout(()=>{ list.style.display='none'; }, 150));
+}
+
+function wireViewEvents(){
+  // Flight cards: expand / edit / delete
+  document.querySelectorAll('.flight-card').forEach(card=>{
+    card.addEventListener('click', (e)=>{
+      const id = card.dataset.id;
+      state.expandedId = state.expandedId === id ? null : id;
+      renderAll();
+    });
+  });
+  document.querySelectorAll('[data-edit]').forEach(btn=>{
+    btn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      const f = state.flights.find(x=>x.id===btn.dataset.edit);
+      state.activeTab='add'; state.addSubtab='manual'; state.editDraft = f;
+      renderAll();
+      document.getElementById('view').insertAdjacentHTML('beforeend','');
+      const view = document.getElementById('view');
+      view.innerHTML = renderAddViewWithDraft(f);
+      wireViewEvents();
+    });
+  });
+  document.querySelectorAll('[data-del]').forEach(btn=>{
+    btn.addEventListener('click', async (e)=>{
+      e.stopPropagation();
+      if(confirm('Smazat tento let? Tuto akci nelze vrátit zpět.')){
+        await deleteFlight(btn.dataset.del);
+        renderAll();
+      }
+    });
+  });
+
+  // Add subtabs
+  document.querySelectorAll('.subtab').forEach(t=>{
+    t.addEventListener('click', ()=>{ state.addSubtab = t.dataset.sub; state.csvRows=null; renderAll(); });
+  });
+
+  // Manual form
+  const manualForm = document.getElementById('manualForm');
+  if(manualForm){
+    wireAutocomplete('originInput','originList');
+    wireAutocomplete('destInput','destList');
+    manualForm.addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      const fd = new FormData(manualForm);
+      const flight = Object.fromEntries(fd.entries());
+      flight.origin = (flight.origin||'').toUpperCase().slice(0,3);
+      flight.destination = (flight.destination||'').toUpperCase().slice(0,3);
+      if(!flight.source) flight.source = 'manual';
+      await saveFlight(flight);
+      showToast('Let uložen ✓');
+      state.activeTab='flights';
+      renderAll();
+    });
+  }
+
+  // PDF import
+  const pdfDrop = document.getElementById('pdfDropzone');
+  if(pdfDrop) pdfDrop.addEventListener('click', ()=>document.getElementById('fileImportPdf').click());
+
+  // Scan import
+  const scanCam = document.getElementById('scanDropzoneCamera');
+  if(scanCam) scanCam.addEventListener('click', startCameraScan);
+  const scanImg = document.getElementById('scanDropzoneImage');
+  if(scanImg) scanImg.addEventListener('click', ()=>document.getElementById('fileImportImage').click());
+
+  // CSV import
+  const csvDrop = document.getElementById('csvDropzone');
+  if(csvDrop) csvDrop.addEventListener('click', ()=>document.getElementById('fileImportCsv').click());
+  const csvSampleBtn = document.getElementById('csvSampleBtn');
+  if(csvSampleBtn) csvSampleBtn.addEventListener('click', downloadSampleCsv);
+  const csvMapSelects = document.querySelectorAll('.csvMapSelect');
+  csvMapSelects.forEach(sel=>{
+    sel.addEventListener('change', ()=>{
+      state.csvMapping[parseInt(sel.dataset.col,10)] = sel.value;
+    });
+  });
+  const csvConfirmBtn = document.getElementById('csvConfirmBtn');
+  if(csvConfirmBtn) csvConfirmBtn.addEventListener('click', confirmCsvImport);
+  const csvCancelBtn = document.getElementById('csvCancelBtn');
+  if(csvCancelBtn) csvCancelBtn.addEventListener('click', ()=>{ state.csvRows=null; state.csvMapping=null; renderAll(); });
+
+  // Settings
+  wireSettingsEvents();
+}
+
+function renderAddViewWithDraft(f){
+  return `
+    <div class="subtabs">
+      <div class="subtab active" data-sub="manual">Ručně</div>
+      <div class="subtab" data-sub="pdf">PDF</div>
+      <div class="subtab" data-sub="scan">Sken</div>
+      <div class="subtab" data-sub="csv">CSV import</div>
+    </div>
+    ${manualFormHTML(f)}
+  `;
+}
+
+/* -------------------------------- PDF import ------------------------------- */
+let pdfjsReady = false;
+function ensurePdfJs(){
+  if(pdfjsReady) return Promise.resolve(true);
+  return new Promise((resolve)=>{
+    if(window.pdfjsLib){ pdfjsReady = true; resolve(true); return; }
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    s.onload = ()=>{
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      pdfjsReady = true; resolve(true);
+    };
+    s.onerror = ()=> resolve(false);
+    document.head.appendChild(s);
+  });
+}
+async function extractPdfText(file){
+  const buf = await file.arrayBuffer();
+  const pdf = await window.pdfjsLib.getDocument({data: buf}).promise;
+  let text = '';
+  for(let p=1; p<=pdf.numPages; p++){
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    text += content.items.map(it=>it.str).join(' ') + '\n';
+  }
+  return text;
+}
+const MONTH_ABBR = {JAN:1,FEB:2,MAR:3,APR:4,MAY:5,JUN:6,JUL:7,AUG:8,SEP:9,OCT:10,NOV:11,DEC:12};
+function guessFlightFromText(text){
+  const upper = text.toUpperCase();
+  const codeMatches = [...upper.matchAll(/\b[A-Z]{3}\b/g)].map(m=>m[0]);
+  const validCodes = [];
+  for(const c of codeMatches){
+    if(AIRPORT_BY_IATA.has(c) && !validCodes.includes(c)) validCodes.push(c);
+    if(validCodes.length >= 6) break;
+  }
+  let flightNumber = '';
+  const fm = upper.match(/\b([A-Z]{2}|[0-9][A-Z]|[A-Z][0-9])\s?(\d{1,4})\b/);
+  if(fm) flightNumber = fm[1].trim() + fm[2].trim();
+  let date = '';
+  let dm = upper.match(/\b(\d{1,2})\s?(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s?(\d{2,4})\b/);
+  if(dm){
+    let yr = dm[3].length===2 ? (2000+parseInt(dm[3],10)) : parseInt(dm[3],10);
+    date = `${yr}-${String(MONTH_ABBR[dm[2]]).padStart(2,'0')}-${String(parseInt(dm[1],10)).padStart(2,'0')}`;
+  } else {
+    dm = upper.match(/\b(20\d{2})-(\d{2})-(\d{2})\b/);
+    if(dm) date = `${dm[1]}-${dm[2]}-${dm[3]}`;
+    else {
+      dm = upper.match(/\b(\d{1,2})[.\/](\d{1,2})[.\/](\d{2,4})\b/);
+      if(dm){
+        let yr = dm[3].length===2 ? (2000+parseInt(dm[3],10)) : parseInt(dm[3],10);
+        date = `${yr}-${String(parseInt(dm[2],10)).padStart(2,'0')}-${String(parseInt(dm[1],10)).padStart(2,'0')}`;
+      }
+    }
+  }
+  let pnr = '';
+  const pm = text.match(/(?:PNR|Booking reference|Rezervačn[íi] k[óo]d|Reservation code)[:\s]*([A-Z0-9]{5,8})/i);
+  if(pm) pnr = pm[1];
+  return { origin: validCodes[0]||'', destination: validCodes[1]||'', flightNumber, date, pnr };
+}
+async function handlePdfFile(file){
+  document.getElementById('pdfResult').innerHTML = `<p style="color:var(--mist2);font-size:13px;">Čtu PDF…</p>`;
+  const ok = await ensurePdfJs();
+  if(!ok){
+    document.getElementById('pdfResult').innerHTML = `<p style="color:var(--stamp);font-size:13px;">Nepodařilo se načíst čtečku PDF (potřeba jednorázově internet). Zkus to znovu, nebo zadej let ručně.</p>`;
+    return;
+  }
+  try{
+    const text = await extractPdfText(file);
+    const guess = guessFlightFromText(text);
+    renderImportReview('pdfResult', guess, text, 'pdf');
+  }catch(err){
+    console.error(err);
+    document.getElementById('pdfResult').innerHTML = `<p style="color:var(--stamp);font-size:13px;">PDF se nepodařilo přečíst. Zkus jiný soubor, nebo zadej let ručně.</p>`;
+  }
+}
+function renderImportReview(containerId, guess, rawText, source){
+  const el = document.getElementById(containerId);
+  el.innerHTML = `
+  <div class="review-box">
+    <div class="warn">Návrh z automatického rozpoznání — zkontroluj a doplň, než uložíš.</div>
+    <div id="reviewFormHolder"></div>
+    <span class="raw-toggle" id="rawToggle">zobrazit surový text / data</span>
+    <div class="raw-text" id="rawTextBox" style="display:none;">${escapeHtml(rawText).slice(0,4000)}</div>
+  </div>`;
+  document.getElementById('reviewFormHolder').innerHTML = manualFormHTML({...guess, source});
+  const rawToggle = document.getElementById('rawToggle');
+  rawToggle.addEventListener('click', ()=>{
+    const box = document.getElementById('rawTextBox');
+    box.style.display = box.style.display==='none' ? 'block' : 'none';
+  });
+  wireAutocomplete('originInput','originList');
+  wireAutocomplete('destInput','destList');
+  document.getElementById('manualForm').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const flight = Object.fromEntries(fd.entries());
+    flight.origin = (flight.origin||'').toUpperCase().slice(0,3);
+    flight.destination = (flight.destination||'').toUpperCase().slice(0,3);
+    flight.source = source;
+    await saveFlight(flight);
+    showToast('Let uložen ✓');
+    state.activeTab='flights';
+    renderAll();
+  });
+}
+
+/* -------------------------------- Scan import ------------------------------ */
+let zxingReady = false;
+function ensureZXing(){
+  if(zxingReady) return Promise.resolve(true);
+  return new Promise((resolve)=>{
+    if(window.ZXing){ zxingReady = true; resolve(true); return; }
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.20.0/umd/index.min.js';
+    s.onload = ()=>{ zxingReady = true; resolve(true); };
+    s.onerror = ()=> resolve(false);
+    document.head.appendChild(s);
+  });
+}
+function parseBCBP(raw){
+  if(!raw || raw[0] !== 'M') return null;
+  try{
+    const legs = parseInt(raw[1],10) || 1;
+    const name = raw.slice(2,22).trim();
+    const pnr = raw.slice(23,30).trim();
+    const from = raw.slice(30,33).trim();
+    const to = raw.slice(33,36).trim();
+    const carrier = raw.slice(36,39).trim();
+    const flightNumRaw = raw.slice(39,44).trim().replace(/^0+/,'');
+    const julianStr = raw.slice(44,47).trim();
+    const julianDay = parseInt(julianStr,10);
+    const compartment = raw.slice(47,48).trim();
+    const seat = raw.slice(48,52).trim();
+    const sequence = raw.slice(52,57).trim();
+    const [lastName,firstName] = name.split('/');
+    if(!from || !to || isNaN(julianDay)) return null;
+    return { legs, lastName:lastName||'', firstName:firstName||'', pnr, from, to, carrier,
+      flightNumber: (carrier+flightNumRaw).trim(), julianDay, compartment, seat, sequence, raw };
+  }catch(e){ return null; }
+}
+function bcbpToDraft(parsed, year){
+  return {
+    date: julianToISODate(parsed.julianDay, year),
+    origin: parsed.from, destination: parsed.to,
+    flightNumber: parsed.flightNumber, seat: parsed.seat, pnr: parsed.pnr,
+  };
+}
+function handleScanResult(rawText){
+  const parsed = parseBCBP(rawText);
+  const el = document.getElementById('scanResult');
+  if(parsed){
+    const thisYear = new Date().getFullYear();
+    el.innerHTML = `
+    <div class="review-box">
+      <div class="warn">Kód rozpoznán (formát IATA BCBP). Potvrď rok letu — barcode ho neobsahuje.</div>
+      <label>Rok letu</label>
+      <select id="bcbpYear">
+        ${[thisYear, thisYear-1, thisYear-2, thisYear-3, thisYear-4].map(y=>`<option value="${y}">${y}</option>`).join('')}
+      </select>
+      <div id="bcbpFormHolder"></div>
+      <span class="raw-toggle" id="rawToggleScan">zobrazit surová data kódu</span>
+      <div class="raw-text" id="rawTextBoxScan" style="display:none;">${escapeHtml(rawText)}</div>
+    </div>`;
+    const renderDraftForm = ()=>{
+      const year = parseInt(document.getElementById('bcbpYear').value,10);
+      document.getElementById('bcbpFormHolder').innerHTML = manualFormHTML({...bcbpToDraft(parsed, year), source:'scan'});
+      wireAutocomplete('originInput','originList');
+      wireAutocomplete('destInput','destList');
+      document.getElementById('manualForm').addEventListener('submit', async (e)=>{
+        e.preventDefault();
+        const fd = new FormData(e.target);
+        const flight = Object.fromEntries(fd.entries());
+        flight.origin = (flight.origin||'').toUpperCase().slice(0,3);
+        flight.destination = (flight.destination||'').toUpperCase().slice(0,3);
+        flight.source = 'scan';
+        await saveFlight(flight);
+        showToast('Let uložen ✓');
+        state.activeTab='flights'; renderAll();
+      });
+    };
+    document.getElementById('bcbpYear').addEventListener('change', renderDraftForm);
+    renderDraftForm();
+    document.getElementById('rawToggleScan').addEventListener('click', ()=>{
+      const box = document.getElementById('rawTextBoxScan');
+      box.style.display = box.style.display==='none'?'block':'none';
+    });
+  } else {
+    el.innerHTML = `
+    <div class="review-box">
+      <div class="warn">Nepodařilo se rozpoznat standardní formát palubního lístku (IATA BCBP). Zkopíruj údaje ručně:</div>
+      <div class="raw-text" style="display:block;">${escapeHtml(rawText)}</div>
+      <div id="scanFallbackForm"></div>
+    </div>`;
+    document.getElementById('scanFallbackForm').innerHTML = manualFormHTML({source:'scan'});
+    wireAutocomplete('originInput','originList');
+    wireAutocomplete('destInput','destList');
+    document.getElementById('manualForm').addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const flight = Object.fromEntries(fd.entries());
+      flight.origin = (flight.origin||'').toUpperCase().slice(0,3);
+      flight.destination = (flight.destination||'').toUpperCase().slice(0,3);
+      flight.source = 'scan';
+      await saveFlight(flight);
+      showToast('Let uložen ✓');
+      state.activeTab='flights'; renderAll();
+    });
+  }
+}
+async function startCameraScan(){
+  const area = document.getElementById('scanArea');
+  const ok = await ensureZXing();
+  if(!ok){
+    area.innerHTML = `<p style="color:var(--stamp);font-size:13px;">Knihovnu pro čtení kódů se nepodařilo načíst (potřeba jednorázově internet).</p>`;
+    return;
+  }
+  area.innerHTML = `<video id="scanVideo" playsinline muted></video><div class="scan-hint">Namiř kameru na QR/čárový kód. Skenování se zastaví po nalezení kódu.</div><button class="btn btn-ghost btn-block" id="stopScanBtn" style="margin-top:10px;">Zastavit</button>`;
+  try{
+    const hints = new Map();
+    hints.set(window.ZXing.DecodeHintType.POSSIBLE_FORMATS, [window.ZXing.BarcodeFormat.QR_CODE, window.ZXing.BarcodeFormat.PDF_417]);
+    const reader = new window.ZXing.BrowserMultiFormatReader(hints);
+    const devices = await window.ZXing.BrowserMultiFormatReader.listVideoInputDevices();
+    const backCam = devices.find(d=>/back|rear|environment/i.test(d.label)) || devices[devices.length-1];
+    const controls = await reader.decodeFromVideoDevice(backCam ? backCam.deviceId : undefined, 'scanVideo', (result, err)=>{
+      if(result){
+        controls.stop();
+        state.scanControls = null;
+        handleScanResult(result.getText());
+      }
+    });
+    state.scanControls = controls;
+    document.getElementById('stopScanBtn').addEventListener('click', ()=>{
+      controls.stop(); state.scanControls=null; area.innerHTML='';
+    });
+  }catch(err){
+    console.error(err);
+    area.innerHTML = `<p style="color:var(--stamp);font-size:13px;">Kameru se nepodařilo spustit (potřebuje HTTPS a povolení přístupu). Zkus nahrát fotku kódu místo toho.</p>`;
+  }
+}
+async function handleScanImageFile(file){
+  const area = document.getElementById('scanArea');
+  area.innerHTML = `<p style="color:var(--mist2);font-size:13px;">Analyzuji fotku…</p>`;
+  const ok = await ensureZXing();
+  if(!ok){
+    area.innerHTML = `<p style="color:var(--stamp);font-size:13px;">Knihovnu pro čtení kódů se nepodařilo načíst (potřeba jednorázově internet).</p>`;
+    return;
+  }
+  try{
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.src = url;
+    await new Promise((res,rej)=>{ img.onload=res; img.onerror=rej; });
+    const hints = new Map();
+    hints.set(window.ZXing.DecodeHintType.POSSIBLE_FORMATS, [window.ZXing.BarcodeFormat.QR_CODE, window.ZXing.BarcodeFormat.PDF_417]);
+    const reader = new window.ZXing.BrowserMultiFormatReader(hints);
+    const result = await reader.decodeFromImageElement(img);
+    area.innerHTML = '';
+    handleScanResult(result.getText());
+  }catch(err){
+    console.error(err);
+    area.innerHTML = `<p style="color:var(--stamp);font-size:13px;">V fotce se nepodařilo najít čitelný kód. Zkus ostřejší/bližší fotku, nebo zadej let ručně.</p>`;
+  }
+}
+
+/* -------------------------------- CSV import ------------------------------- */
+function downloadSampleCsv(){
+  const sample = 'datum,aerolinka,číslo letu,odkud,kam,sedadlo,pnr,poznámka\n2024-06-01,Czech Airlines,OK123,PRG,BCN,14C,ABCDEF,dovolená\n';
+  const blob = new Blob([sample], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'moje-lety-sablona.csv';
+  a.click();
+}
+function handleCsvFile(file){
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    const text = reader.result;
+    const delim = detectDelimiter(text);
+    const parsed = parseCSV(text, delim);
+    if(parsed.length < 2){ showToast('CSV se nepodařilo přečíst.'); return; }
+    const headers = parsed[0];
+    const rows = parsed.slice(1);
+    state.csvRows = {headers, rows};
+    state.csvMapping = guessMapping(headers);
+    renderAll();
+  };
+  reader.readAsText(file, 'utf-8');
+}
+async function confirmCsvImport(){
+  const {headers, rows} = state.csvRows;
+  const mapping = state.csvMapping;
+  let count = 0;
+  for(const r of rows){
+    const flight = {source:'csv'};
+    mapping.forEach((field,i)=>{
+      if(field) flight[field] = (r[i]||'').trim();
+    });
+    if(flight.origin) flight.origin = flight.origin.toUpperCase().slice(0,3);
+    if(flight.destination) flight.destination = flight.destination.toUpperCase().slice(0,3);
+    if(!flight.date && !flight.origin && !flight.destination) continue;
+    await saveFlight(flight);
+    count++;
+  }
+  state.csvRows = null; state.csvMapping = null;
+  showToast(`Importováno ${count} letů ✓`);
+  state.activeTab = 'flights';
+  renderAll();
+}
+
+/* ------------------------------ Settings actions ---------------------------- */
+function wireSettingsEvents(){
+  const btnPush = document.getElementById('btnPush');
+  const btnPull = document.getElementById('btnPull');
+  const sheetsUrlInput = document.getElementById('sheetsUrl');
+  const sheetsKeyInput = document.getElementById('sheetsKey');
+  if(sheetsUrlInput){
+    getSettings().then(cfg=>{
+      sheetsUrlInput.value = cfg.sheetsUrl || '';
+      sheetsKeyInput.value = cfg.apiKey || '';
+    });
+    sheetsUrlInput.addEventListener('change', ()=> setSettings({sheetsUrl: sheetsUrlInput.value.trim()}));
+    sheetsKeyInput.addEventListener('change', ()=> setSettings({apiKey: sheetsKeyInput.value.trim()}));
+  }
+  if(btnPush) btnPush.addEventListener('click', pushToSheets);
+  if(btnPull) btnPull.addEventListener('click', pullFromSheets);
+
+  const btnExportJson = document.getElementById('btnExportJson');
+  if(btnExportJson) btnExportJson.addEventListener('click', async ()=>{
+    const flights = await dbGetAll('flights');
+    const blob = new Blob([JSON.stringify(flights,null,2)], {type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `moje-lety-zaloha-${todayISO()}.json`;
+    a.click();
+  });
+  const btnImportJson = document.getElementById('btnImportJson');
+  if(btnImportJson) btnImportJson.addEventListener('click', ()=>document.getElementById('fileImportJson').click());
+
+  const btnExportCsvAll = document.getElementById('btnExportCsvAll');
+  if(btnExportCsvAll) btnExportCsvAll.addEventListener('click', async ()=>{
+    const flights = await dbGetAll('flights');
+    const cols = ['date','airline','flightNumber','origin','destination','depTime','arrTime','seat','pnr','aircraft','notes'];
+    const lines = [cols.join(',')];
+    for(const f of flights){
+      lines.push(cols.map(c=>`"${(f[c]||'').toString().replace(/"/g,'""')}"`).join(','));
+    }
+    const blob = new Blob([lines.join('\n')], {type:'text/csv;charset=utf-8'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `moje-lety-export-${todayISO()}.csv`;
+    a.click();
+  });
+
+  const btnClearAll = document.getElementById('btnClearAll');
+  if(btnClearAll) btnClearAll.addEventListener('click', async ()=>{
+    if(confirm('Opravdu smazat úplně všechna data z tohoto zařízení? Nevratné.')){
+      const all = await dbGetAll('flights');
+      for(const f of all) await dbDelete('flights', f.id);
+      await loadFlights();
+      showToast('Vymazáno.');
+      renderAll();
+    }
+  });
+}
+async function pushToSheets(){
+  const cfg = await getSettings();
+  if(!cfg.sheetsUrl || !cfg.apiKey){ showToast('Nejprve vyplň URL a API klíč.'); return; }
+  document.getElementById('syncDot').className = 'sync-dot busy';
+  try{
+    const flights = await dbGetAll('flights');
+    const res = await fetch(cfg.sheetsUrl, {
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({key: cfg.apiKey, flights}),
+    });
+    const data = await res.json();
+    if(data.error){ showToast('Chyba: '+data.error); document.getElementById('syncDot').className='sync-dot'; return; }
+    showToast(`Zálohováno (${data.count||flights.length} letů) ✓`);
+    document.getElementById('syncDot').className = 'sync-dot ok';
+    document.getElementById('syncLabel').textContent = 'zálohováno';
+  }catch(err){
+    console.error(err);
+    showToast('Zálohu se nepodařilo odeslat.');
+    document.getElementById('syncDot').className = 'sync-dot';
+  }
+}
+async function pullFromSheets(){
+  const cfg = await getSettings();
+  if(!cfg.sheetsUrl || !cfg.apiKey){ showToast('Nejprve vyplň URL a API klíč.'); return; }
+  document.getElementById('syncDot').className = 'sync-dot busy';
+  try{
+    const url = cfg.sheetsUrl + (cfg.sheetsUrl.includes('?')?'&':'?') + 'key=' + encodeURIComponent(cfg.apiKey);
+    const res = await fetch(url);
+    const data = await res.json();
+    if(data.error){ showToast('Chyba: '+data.error); document.getElementById('syncDot').className='sync-dot'; return; }
+    let count = 0;
+    for(const f of (data.flights||[])){
+      if(!f.id) continue;
+      await dbPut('flights', f);
+      count++;
+    }
+    await loadFlights();
+    showToast(`Staženo ${count} letů ✓`);
+    document.getElementById('syncDot').className = 'sync-dot ok';
+    document.getElementById('syncLabel').textContent = 'sesynchronizováno';
+    renderAll();
+  }catch(err){
+    console.error(err);
+    showToast('Stažení se nezdařilo.');
+    document.getElementById('syncDot').className = 'sync-dot';
+  }
+}
+
+/* --------------------------------- File inputs ------------------------------ */
+document.getElementById('fileImportPdf').addEventListener('change', (e)=>{
+  const f = e.target.files[0]; if(f) handlePdfFile(f); e.target.value='';
+});
+document.getElementById('fileImportImage').addEventListener('change', (e)=>{
+  const f = e.target.files[0]; if(f) handleScanImageFile(f); e.target.value='';
+});
+document.getElementById('fileImportCsv').addEventListener('change', (e)=>{
+  const f = e.target.files[0]; if(f) handleCsvFile(f); e.target.value='';
+});
+document.getElementById('fileImportJson').addEventListener('change', (e)=>{
+  const f = e.target.files[0]; if(!f) return;
+  const reader = new FileReader();
+  reader.onload = async ()=>{
+    try{
+      const data = JSON.parse(reader.result);
+      let count = 0;
+      for(const f of data){ if(f.id){ await dbPut('flights', f); count++; } }
+      await loadFlights();
+      showToast(`Obnoveno ${count} letů ✓`);
+      renderAll();
+    }catch(err){ showToast('Soubor se nepodařilo přečíst.'); }
+  };
+  reader.readAsText(f, 'utf-8');
+  e.target.value='';
+});
+
+/* ----------------------------------- Init ------------------------------------ */
+async function init(){
+  await loadAirports();
+  await loadFlights();
+  renderAll();
+  if('serviceWorker' in navigator){
+    try{ await navigator.serviceWorker.register('sw.js'); }catch(e){ /* sandbox nebo file:// – v pořádku, appka funguje i tak */ }
+  }
+}
+init();
+</script>
+</body>
+</html>
