@@ -394,7 +394,7 @@
 
 /* ---------------------------- IndexedDB layer --------------------------- */
 const DB_NAME = 'flightlog-db';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 let _dbPromise = null;
 function openDB(){
   if(_dbPromise) return _dbPromise;
@@ -405,6 +405,7 @@ function openDB(){
       if(!db.objectStoreNames.contains('flights')) db.createObjectStore('flights', {keyPath:'id'});
       if(!db.objectStoreNames.contains('settings')) db.createObjectStore('settings', {keyPath:'key'});
       if(!db.objectStoreNames.contains('photos')) db.createObjectStore('photos', {keyPath:'flightId'});
+      if(!db.objectStoreNames.contains('tombstones')) db.createObjectStore('tombstones', {keyPath:'id'});
     };
     req.onsuccess = ()=>resolve(req.result);
     req.onerror = ()=>reject(req.error);
@@ -598,6 +599,7 @@ async function saveFlight(flight){
 async function deleteFlight(id){
   await dbDelete('flights', id);
   await dbDelete('photos', id).catch(()=>{});
+  await dbPut('tombstones', {id, deletedAt: Date.now()});
   await loadFlights();
   scheduleAutoSync();
 }
@@ -719,7 +721,9 @@ async function autoSyncPush(){
   const dot = document.getElementById('syncDot');
   if(dot) dot.className = 'sync-dot busy';
   const flights = await dbGetAll('flights');
-  const data = await callServer({action:'sync', key: cfg.sessionToken, flights});
+  const tombstones = await dbGetAll('tombstones');
+  const deletedIds = tombstones.map(t=>t.id);
+  const data = await callServer({action:'sync', key: cfg.sessionToken, flights, deletedIds});
   if(dot) dot.className = data.ok ? 'sync-dot ok' : 'sync-dot';
   const lbl = document.getElementById('syncLabel');
   if(lbl && data.ok) lbl.textContent = 'backed up';
@@ -739,6 +743,16 @@ async function autoSyncPull(){
     const localUpdated = local ? (Number(local.updatedAt)||0) : -1;
     if(!local || remoteUpdated > localUpdated){
       await dbPut('flights', remote);
+      changed = true;
+    }
+  }
+  // A flight deleted on another device shows up here even though it's
+  // still sitting in our own local copy — remove it to match.
+  for(const delId of (data.deletedIds||[])){
+    const stillLocal = state.flights.find(f=>f.id===delId);
+    if(stillLocal){
+      await dbDelete('flights', delId);
+      await dbDelete('photos', delId).catch(()=>{});
       changed = true;
     }
   }
