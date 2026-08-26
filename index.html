@@ -296,6 +296,12 @@
   .chip.toggle{ cursor:pointer; border:1px solid var(--line); user-select:none; }
   .chip.toggle.active{ background:var(--brass); color:#1E1A0A; border-color:var(--brass); font-weight:700; }
 
+  .filter-toggle-row{ display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; }
+  .filter-panel{ background:var(--navy-2); border-radius:14px; padding:14px; margin-bottom:14px; }
+  .filter-group{ margin-bottom:12px; }
+  .filter-group:last-child{ margin-bottom:0; }
+  .filter-group-label{ font-size:11.5px; text-transform:uppercase; letter-spacing:.8px; color:var(--mist2); margin-bottom:6px; font-weight:700; }
+
   .map-wrap{ background:var(--navy-2); border-radius:14px; padding:10px; margin-bottom:10px; }
   .map-wrap svg{ width:100%; height:auto; display:block; }
   .map-country{ fill:#283056; stroke:#354073; stroke-width:.4; }
@@ -571,6 +577,8 @@ const state = {
   lockError: '',
   lockBusy: false,
   collapsedYears: new Set(),
+  flightFilters: { airline: new Set(), origin: new Set(), destination: new Set(), month: new Set() },
+  filtersOpen: false,
   statsYears: null, // null = all years; otherwise a Set of selected years
   photoUploadTargetId: null,
 };
@@ -878,6 +886,7 @@ const ICONS = {
   upload: '<svg viewBox="0 0 24 24" fill="none"><path d="M12 16V4M7 9l5-5 5 5M4 20h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   camera: '<svg viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 011-1z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="14" r="3.5" stroke="currentColor" stroke-width="1.6"/></svg>',
   chevron: '<svg viewBox="0 0 24 24" fill="none" class="chevron" width="16" height="16"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  filter: '<svg viewBox="0 0 24 24" fill="none" width="15" height="15" style="vertical-align:-2px"><path d="M4 5h16M7 12h10M10 19h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
 };
 
 /* ---------------------------------- Tabs ---------------------------------- */
@@ -917,6 +926,78 @@ function airportLabel(iata){
 function isUpcoming(dateStr){
   return !!dateStr && dateStr >= todayISO();
 }
+function airlineCodeOf(f){
+  return (f.flightNumber||'').replace(/[0-9\s]/g,'').slice(0,2).toUpperCase() || (f.airline||'').slice(0,2).toUpperCase() || '';
+}
+function buildFilterOptions(flights){
+  const airline = new Set(), origin = new Set(), destination = new Set(), month = new Set();
+  for(const f of flights){
+    const al = airlineCodeOf(f); if(al) airline.add(al);
+    if(f.origin) origin.add(f.origin);
+    if(f.destination) destination.add(f.destination);
+    const ym = (f.date||'').slice(0,7); if(ym.length===7) month.add(ym);
+  }
+  return {
+    airline: [...airline].sort(),
+    origin: [...origin].sort(),
+    destination: [...destination].sort(),
+    month: [...month].sort(),
+  };
+}
+function flightMatchesFilters(f){
+  const ff = state.flightFilters;
+  if(ff.airline.size && !ff.airline.has(airlineCodeOf(f))) return false;
+  if(ff.origin.size && !ff.origin.has(f.origin)) return false;
+  if(ff.destination.size && !ff.destination.has(f.destination)) return false;
+  if(ff.month.size && !ff.month.has((f.date||'').slice(0,7))) return false;
+  return true;
+}
+function anyFiltersActive(){
+  const ff = state.flightFilters;
+  return ff.airline.size + ff.origin.size + ff.destination.size + ff.month.size;
+}
+function filterValueLabel(type, v){
+  if(type==='month'){
+    const [y,m] = v.split('-');
+    const mi = parseInt(m,10)-1;
+    return (mi>=0 && mi<=11) ? `${MONTHS_EN[mi]} ${y}` : v;
+  }
+  if(type==='origin' || type==='destination'){
+    const a = AIRPORT_BY_IATA.get(v);
+    return a ? `${countryFlag(a.country)} ${v}` : v;
+  }
+  return v;
+}
+function renderFilterPanel(opts){
+  const ff = state.flightFilters;
+  const activeCount = anyFiltersActive();
+  const toggleRow = `
+    <div class="filter-toggle-row">
+      <div class="btn btn-ghost btn-sm" id="filterToggleBtn">${ICONS.filter} Filter${activeCount?` (${activeCount})`:''}</div>
+      ${activeCount?`<div class="btn btn-ghost btn-sm" id="filterClearBtn">Clear filters</div>`:''}
+    </div>`;
+  if(!state.filtersOpen) return toggleRow;
+
+  const group = (label, type) => {
+    const values = opts[type];
+    if(!values.length) return '';
+    return `
+    <div class="filter-group">
+      <div class="filter-group-label">${label}</div>
+      <div class="chip-list">
+        ${values.map(v=>`<div class="chip toggle ${ff[type].has(v)?'active':''}" data-filtertype="${type}" data-filterval="${escapeHtml(v)}">${escapeHtml(filterValueLabel(type,v))}</div>`).join('')}
+      </div>
+    </div>`;
+  };
+
+  return toggleRow + `
+    <div class="filter-panel">
+      ${group('Airline', 'airline')}
+      ${group('Origin', 'origin')}
+      ${group('Destination', 'destination')}
+      ${group('Month', 'month')}
+    </div>`;
+}
 function renderFlightsView(){
   const subFlights = state.flights.filter(f => state.flightsSubtab === 'upcoming' ? isUpcoming(f.date) : !isUpcoming(f.date));
 
@@ -933,8 +1014,16 @@ function renderFlightsView(){
     return subtabsHtml + `<div class="empty">✈️<br><br><b>Nothing here yet.</b><br>${msg}</div>`;
   }
 
+  const filterOpts = buildFilterOptions(subFlights);
+  const filterHtml = renderFilterPanel(filterOpts);
+  const displayed = subFlights.filter(flightMatchesFilters);
+
+  if(!displayed.length){
+    return subtabsHtml + filterHtml + `<div class="empty">🔍<br><br><b>No flights match these filters.</b><br>Try removing one, or hit "Clear filters".</div>`;
+  }
+
   const groups = {};
-  for(const f of subFlights){
+  for(const f of displayed){
     const y = (f.date||'').slice(0,4) || 'No date';
     (groups[y] = groups[y]||[]).push(f);
   }
@@ -960,7 +1049,7 @@ function renderFlightsView(){
     </div>`;
   }).join('');
 
-  return subtabsHtml + `
+  return subtabsHtml + filterHtml + `
     <div class="flights-row">
       <div class="flights-col">${listHtml}</div>
       ${scrubber}
@@ -1428,6 +1517,23 @@ function wireViewEvents(){
   document.querySelectorAll('[data-flightsub]').forEach(t=>{
     t.addEventListener('click', ()=>{ state.flightsSubtab = t.dataset.flightsub; state.expandedId=null; renderAll(); });
   });
+  // Flight filters
+  const filterToggleBtn = document.getElementById('filterToggleBtn');
+  if(filterToggleBtn) filterToggleBtn.addEventListener('click', ()=>{ state.filtersOpen = !state.filtersOpen; renderAll(); });
+  const filterClearBtn = document.getElementById('filterClearBtn');
+  if(filterClearBtn) filterClearBtn.addEventListener('click', ()=>{
+    state.flightFilters = { airline:new Set(), origin:new Set(), destination:new Set(), month:new Set() };
+    renderAll();
+  });
+  document.querySelectorAll('[data-filtertype]').forEach(chip=>{
+    chip.addEventListener('click', ()=>{
+      const type = chip.dataset.filtertype, val = chip.dataset.filterval;
+      const set = state.flightFilters[type];
+      if(set.has(val)) set.delete(val); else set.add(val);
+      renderAll();
+    });
+  });
+
   // Year collapse/expand
   document.querySelectorAll('[data-toggleyear]').forEach(h=>{
     h.addEventListener('click', ()=>{
